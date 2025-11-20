@@ -219,6 +219,16 @@ resource "aws_network_acl" "public" {
     action     = "allow"
   }
 
+  # Permitir tráfico SSH entrante (para bastion host)
+  ingress {
+    rule_no    = 115
+    protocol   = "tcp"
+    from_port  = 22
+    to_port    = 22
+    cidr_block = "0.0.0.0/0"
+    action     = "allow"
+  }
+
   # Permitir tráfico entrante desde VPC
   ingress {
     rule_no    = 120

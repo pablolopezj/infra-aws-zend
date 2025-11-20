@@ -27,12 +27,17 @@ echo "Bastion IP: $BASTION_IP"
 
 ### Conectarse vía SSH
 
+**Importante**: Usa el nombre correcto de tu archivo de clave (`.pem` o sin extensión):
+
 ```bash
-# Conectarse al bastion
+# Si tu archivo se llama zend-app-key.pem
+ssh -i ~/.ssh/zend-app-key.pem ec2-user@$BASTION_IP
+
+# Si tu archivo se llama zend-app-key (sin .pem)
 ssh -i ~/.ssh/zend-app-key ec2-user@$BASTION_IP
 
 # O directamente
-ssh -i ~/.ssh/zend-app-key ec2-user@$(terraform output -raw bastion_public_ip)
+ssh -i ~/.ssh/zend-app-key.pem ec2-user@$(terraform output -raw bastion_public_ip)
 ```
 
 ## 🚀 Paso 2: Desde el Bastion, Conectarse a Instancia Privada

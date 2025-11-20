@@ -1,0 +1,21 @@
+# ========================================
+# Bastion Host Zend
+# ========================================
+Host bastion-zend
+    HostName 78.12.203.98
+    User ec2-user
+    IdentityFile ~/.ssh/zend-app-key.pem
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+
+# ========================================
+# Instancia Privada Zend (a través del bastion)
+# ========================================
+Host zend-app
+    HostName 10.0.2.132
+    User ec2-user
+    IdentityFile ~/.ssh/zend-app-key.pem
+    ProxyCommand ssh -W %h:%p bastion-zend
+    StrictHostKeyChecking no
+    UserKnownHostsFile /dev/null
+
