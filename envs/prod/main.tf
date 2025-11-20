@@ -12,10 +12,12 @@ locals {
 module "network" {
   source = "../../modules/network"
 
-  vpc_cidr           = "10.0.0.0/16"
-  public_subnet_cidr = "10.0.1.0/24"
-  private_subnet_cidr = "10.0.2.0/24"
+  vpc_cidr            = var.vpc_cidr
+  public_subnet_cidr  = var.public_subnet_cidr
+  public_subnet_az    = var.public_subnet_az
+  private_subnet_cidr = var.private_subnet_cidr
+  private_subnet_az   = var.private_subnet_az
 
-  tags = local.common_tags
+  tags        = local.common_tags
   name_prefix = local.name_prefix
 }

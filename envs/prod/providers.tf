@@ -7,13 +7,13 @@ terraform {
       version = "~> 5.0"
     }
   }
-
-  # Más adelante puedes activar backend remoto (S3 + DynamoDB) aquí
-  # backend "s3" {
-  #   bucket = "mi-terraform-state"
-  #   key    = "prod/terraform.tfstate"
-  #   region = "eu-central-1"
-  # }
+  backend "s3" {
+    bucket         = "zend-terraform-state"
+    key            = "prod/terraform.tfstate"
+    region         = "mx-central-1"
+    dynamodb_table = "zend-terraform-locks"
+    encrypt        = true
+  }
 }
 
 provider "aws" {
