@@ -14,11 +14,16 @@ Infraestructura como código (IaC) para desplegar recursos de red en AWS usando 
 
 ## 📖 Descripción
 
-Este proyecto gestiona la infraestructura de red para la aplicación Zend en AWS, incluyendo:
+Este proyecto gestiona la infraestructura completa para la aplicación Zend en AWS, incluyendo:
 
 - **VPC** con subredes públicas y privadas
 - **Internet Gateway** para conectividad pública
 - **Tablas de ruteo** para subredes públicas y privadas
+- **Security Groups y Network ACLs** para seguridad de red
+- **VPC Endpoints** (S3 y DynamoDB) para minimizar tráfico externo
+- **Instancias EC2** con configuración personalizada
+- **Volúmenes EBS** con snapshots automáticos
+- **Key Pairs** para acceso SSH seguro
 - **Backend remoto** (S3 + DynamoDB) para gestión segura del estado de Terraform
 
 ## 📁 Estructura del Proyecto
@@ -37,11 +42,19 @@ infra-aws-zend/
 │       ├── providers.tf
 │       └── outputs.tf
 └── modules/
-    ├── network/            # Módulo de red (VPC, subredes, IGW, etc.)
+    ├── network/            # Módulo de red (VPC, subredes, IGW, Security Groups, NACLs, VPC Endpoints)
     │   ├── main.tf
     │   ├── variables.tf
     │   └── outputs.tf
-    └── state_backend/      # Módulo para backend de Terraform (S3 + DynamoDB)
+    ├── compute/             # Módulo de compute (EC2, EBS, Snapshots automáticos)
+    │   ├── main.tf
+    │   ├── variables.tf
+    │   └── outputs.tf
+    ├── keypair/             # Módulo para Key Pairs SSH
+    │   ├── main.tf
+    │   ├── variables.tf
+    │   └── outputs.tf
+    └── state_backend/       # Módulo para backend de Terraform (S3 + DynamoDB)
         ├── main.tf
         ├── variables.tf
         └── outputs.tf
@@ -64,7 +77,11 @@ Antes de comenzar, asegúrate de tener:
 3. **Permisos de AWS** suficientes para crear:
    - Buckets S3
    - Tablas DynamoDB
-   - Recursos de VPC (VPC, Subnets, Internet Gateway, Route Tables)
+   - Recursos de VPC (VPC, Subnets, Internet Gateway, Route Tables, Security Groups, NACLs)
+   - Instancias EC2
+   - Volúmenes EBS
+   - Key Pairs
+   - IAM Roles y Policies (para Data Lifecycle Manager)
 
 ## 🚀 Flujo de Trabajo
 
@@ -133,6 +150,12 @@ Una vez que el backend está creado, puedes usar el entorno de producción:
    - Subred privada en `mx-central-1b` con CIDR `10.0.2.0/24`
    - Internet Gateway
    - Tablas de ruteo para subredes públicas y privadas
+   - Security Groups (público y privado)
+   - Network ACLs (público y privado)
+   - VPC Endpoints para S3 y DynamoDB
+   - Instancia EC2 (t4g.medium) con Amazon Linux 2023
+   - Volumen EBS (100 GB gp3) con snapshots automáticos (1 vez al día)
+   - Key Pair para acceso SSH (si está configurado)
 
 5. Verifica los outputs:
    ```bash
@@ -144,26 +167,39 @@ Una vez que el backend está creado, puedes usar el entorno de producción:
 ### Recursos de Red Creados
 
 ```
-┌─────────────────────────────────────────────────┐
-│                    VPC                          │
-│            (10.0.0.0/16)                       │
-│                                                 │
-│  ┌──────────────────┐  ┌──────────────────┐    │
-│  │  Subred Pública │  │ Subred Privada  │    │
-│  │  (10.0.1.0/24)  │  │  (10.0.2.0/24)  │    │
-│  │  mx-central-1a  │  │  mx-central-1b  │    │
-│  │                 │  │                  │    │
-│  │  Route Table    │  │  Route Table     │    │
-│  │  (Pública)      │  │  (Privada)       │    │
-│  └────────┬────────┘  └──────────────────┘    │
-│           │                                     │
-└───────────┼─────────────────────────────────────┘
-            │
-            ▼
-    ┌───────────────┐
-    │ Internet      │
-    │ Gateway       │
-    └───────────────┘
+┌─────────────────────────────────────────────────────────────┐
+│                         VPC                                  │
+│                    (10.0.0.0/16)                            │
+│                                                              │
+│  ┌──────────────────────┐    ┌──────────────────────┐      │
+│  │   Subred Pública     │    │   Subred Privada     │      │
+│  │   (10.0.1.0/24)      │    │   (10.0.2.0/24)      │      │
+│  │   mx-central-1a      │    │   mx-central-1b       │      │
+│  │                      │    │                      │      │
+│  │  Security Group      │    │  Security Group      │      │
+│  │  (Público)           │    │  (Privado)           │      │
+│  │                      │    │                      │      │
+│  │  Network ACL         │    │  Network ACL         │      │
+│  │  (Público)           │    │  (Privado)           │      │
+│  │                      │    │                      │      │
+│  │  Route Table         │    │  Route Table         │      │
+│  │  (Pública)           │    │  (Privada)           │      │
+│  └──────────┬───────────┘    └──────────┬───────────┘      │
+│             │                           │                  │
+│             │                           │                  │
+│             │    ┌──────────────┐       │                  │
+│             │    │  EC2 Instance│       │                  │
+│             │    │  (t4g.medium)│       │                  │
+│             │    │  + EBS 100GB│       │                  │
+│             │    └──────────────┘       │                  │
+└─────────────┼───────────────────────────┼──────────────────┘
+              │                           │
+              │                           │
+              ▼                           ▼
+    ┌─────────────────┐         ┌──────────────────┐
+    │ Internet        │         │ VPC Endpoints    │
+    │ Gateway         │         │ (S3, DynamoDB)   │
+    └─────────────────┘         └──────────────────┘
 ```
 
 ### Backend de Terraform
@@ -190,6 +226,17 @@ Una vez que el backend está creado, puedes usar el entorno de producción:
 | `short_region` | Código corto de región para naming | `mxc1` |
 | `environment` | Nombre del entorno | `prod` |
 | `project_name` | Nombre del proyecto | `zend-app` |
+| `vpc_cidr` | CIDR block para la VPC | `10.0.0.0/16` |
+| `public_subnet_cidr` | CIDR block para subred pública | `10.0.1.0/24` |
+| `public_subnet_az` | Availability Zone para subred pública | `mx-central-1a` |
+| `private_subnet_cidr` | CIDR block para subred privada | `10.0.2.0/24` |
+| `private_subnet_az` | Availability Zone para subred privada | `mx-central-1b` |
+| `enable_ec2_instance` | Habilitar creación de instancia EC2 | `true` |
+| `ec2_instance_type` | Tipo de instancia EC2 | `t4g.medium` |
+| `ec2_key_name` | Nombre del key pair para SSH | `zend-app-key` |
+| `ec2_subnet_tier` | Subnet para EC2 (public/private) | `private` |
+| `create_key_pair` | Crear key pair con Terraform | `false` |
+| `public_key_path` | Ruta a la clave pública SSH | `""` |
 
 ### Módulo Network (`modules/network/variables.tf`)
 
@@ -202,6 +249,34 @@ Una vez que el backend está creado, puedes usar el entorno de producción:
 | `private_subnet_az` | Availability Zone para subred privada | Sí |
 | `name_prefix` | Prefijo para nombres de recursos | Sí |
 | `tags` | Tags comunes para todos los recursos | No |
+| `enable_vpc_endpoints` | Habilitar VPC Endpoints (S3, DynamoDB) | No (default: `true`) |
+| `allowed_public_ingress_cidrs` | CIDRs permitidos para acceso público | No (default: `["0.0.0.0/0"]`) |
+
+### Módulo Compute (`modules/compute/variables.tf`)
+
+| Variable | Descripción | Requerido |
+|----------|-------------|-----------|
+| `name_prefix` | Prefijo para nombres de recursos | Sí |
+| `subnet_id` | ID de la subred donde crear la instancia | Sí |
+| `security_group_ids` | Lista de Security Group IDs | Sí |
+| `instance_type` | Tipo de instancia EC2 | No (default: `t4g.medium`) |
+| `key_name` | Nombre del key pair para SSH | No |
+| `monitoring_enabled` | Habilitar monitoreo detallado | No (default: `false`) |
+| `ebs_volume_size` | Tamaño del volumen EBS en GB | No (default: `100`) |
+| `ebs_volume_type` | Tipo de volumen EBS | No (default: `gp3`) |
+| `ebs_iops` | IOPS para volúmenes gp3 | No (default: `3000`) |
+| `ebs_throughput` | Throughput en MB/s para gp3 | No (default: `125`) |
+| `enable_snapshots` | Número de snapshots por día | No (default: `1`) |
+| `snapshot_retention_days` | Días de retención de snapshots | No (default: `7`) |
+| `tags` | Tags comunes para todos los recursos | No |
+
+### Módulo Key Pair (`modules/keypair/variables.tf`)
+
+| Variable | Descripción | Requerido |
+|----------|-------------|-----------|
+| `key_name` | Nombre del key pair en AWS | Sí |
+| `public_key` | Contenido de la clave pública SSH | Sí |
+| `tags` | Tags para el key pair | No |
 
 ## 📝 Comandos Comunes
 
@@ -259,22 +334,47 @@ terraform destroy
 
 2. **Backend remoto**: Una vez configurado el backend remoto en `prod`, el estado se almacena en S3. No edites el estado manualmente.
 
-3. **Bloqueo de estado**: DynamoDB previene ejecuciones concurrentes de Terraform. Si un proceso se interrumpe, el lock puede quedar activo. En ese caso, elimina manualmente el item en DynamoDB.
+3. **Bloqueo de estado**: DynamoDB previene ejecuciones concurrentes de Terraform. Si un proceso se interrumpe, el lock puede quedar activo. Ver `SOLUCION_LOCK.md` para resolverlo.
 
-4. **Costo**: El bucket S3 y la tabla DynamoDB tienen costos mínimos (generalmente dentro del tier gratuito para proyectos pequeños).
+4. **Key Pairs**: Para crear un key pair, consulta `CREAR_KEY_PAIR.md`. La clave privada nunca debe subirse a Git.
 
-5. **Seguridad**: El bucket S3 tiene acceso público bloqueado y encriptación habilitada por defecto.
+5. **Snapshots EBS**: Los snapshots se crean automáticamente (1 vez al día por defecto) y se retienen 7 días. Costo estimado: ~$0.75-1.50 USD/mes.
+
+6. **Costo**: 
+   - Backend (S3 + DynamoDB): ~$0-1 USD/mes
+   - VPC y Networking: Gratis
+   - EC2 (t4g.medium): ~$30-40 USD/mes (depende de Savings Plans)
+   - EBS (100 GB gp3): ~$8 USD/mes
+   - Snapshots: ~$0.75-1.50 USD/mes
+
+7. **Seguridad**: 
+   - El bucket S3 tiene acceso público bloqueado y encriptación habilitada
+   - Security Groups y NACLs configurados por defecto
+   - VPC Endpoints minimizan tráfico externo
+   - Volúmenes EBS encriptados por defecto
 
 ## 🔄 Próximos Pasos
 
 Mejoras recomendadas para el futuro:
 
+- [x] Agregar Security Groups y NACLs ✅
+- [x] Implementar VPC Endpoints para servicios AWS ✅
+- [x] Agregar validaciones en variables ✅
+- [x] Crear módulo de compute (EC2) ✅
+- [x] Crear módulo de Key Pairs ✅
 - [ ] Agregar NAT Gateway para conectividad saliente de la subred privada
 - [ ] Crear múltiples subredes por AZ para alta disponibilidad
-- [ ] Agregar Security Groups y NACLs
-- [ ] Implementar VPC Endpoints para servicios AWS
-- [ ] Agregar validaciones en variables
-- [ ] Crear módulos adicionales (compute, databases, etc.)
+- [ ] Agregar módulo de bases de datos (RDS)
+- [ ] Agregar módulo de Load Balancer (ALB)
+- [ ] Implementar Auto Scaling Groups
+- [ ] Agregar CloudWatch Alarms y Logs
+
+## 📚 Documentación Adicional
+
+- **[CREAR_KEY_PAIR.md](CREAR_KEY_PAIR.md)**: Guía para crear y configurar Key Pairs SSH
+- **[VERIFICACION.md](VERIFICACION.md)**: Guía completa para verificar que todo se creó correctamente
+- **[ACTUALIZACION.md](ACTUALIZACION.md)**: Guía para actualizar recursos de seguridad
+- **[SOLUCION_LOCK.md](SOLUCION_LOCK.md)**: Solución de problemas con State Locks
 
 ## 📚 Recursos
 

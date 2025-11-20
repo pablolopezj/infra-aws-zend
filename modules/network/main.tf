@@ -155,6 +155,15 @@ resource "aws_security_group" "private" {
     security_groups = [aws_security_group.public.id]
   }
 
+  # Permitir SSH desde cualquier instancia en subnet pública (incluye bastion)
+  ingress {
+    description = "Allow SSH from public subnet (bastion access)"
+    from_port   = 22
+    to_port     = 22
+    protocol    = "tcp"
+    cidr_blocks = [var.public_subnet_cidr]
+  }
+
   # Permitir tráfico interno dentro de la VPC
   ingress {
     description = "Allow internal VPC traffic"
