@@ -25,6 +25,8 @@ Este proyecto gestiona la infraestructura completa para la aplicación Zend en A
 - **Instancias EC2** con configuración personalizada
 - **Volúmenes EBS** con snapshots automáticos
 - **Key Pairs** para acceso SSH seguro
+- **S3 Bucket** para almacenamiento de la aplicación con lifecycle policies
+- **RDS PostgreSQL** (opcional, comentado por defecto)
 - **Backend remoto** (S3 + DynamoDB) para gestión segura del estado de Terraform
 
 ## 📁 Estructura del Proyecto
@@ -56,6 +58,14 @@ infra-aws-zend/
     │   ├── variables.tf
     │   └── outputs.tf
     ├── bastion/             # Módulo para Bastion Host
+    │   ├── main.tf
+    │   ├── variables.tf
+    │   └── outputs.tf
+    ├── s3/                  # Módulo para S3 Bucket de aplicación
+    │   ├── main.tf
+    │   ├── variables.tf
+    │   └── outputs.tf
+    ├── rds/                 # Módulo para RDS PostgreSQL (opcional)
     │   ├── main.tf
     │   ├── variables.tf
     │   └── outputs.tf
@@ -161,7 +171,10 @@ Una vez que el backend está creado, puedes usar el entorno de producción:
    - Instancia EC2 (t4g.medium) con Amazon Linux 2023 en subnet privada
    - Volumen EBS (100 GB gp3) con snapshots automáticos (1 vez al día)
    - Bastion Host (t4g.micro) en subnet pública para acceso seguro
+   - S3 Bucket para almacenamiento de la aplicación con lifecycle policies
+   - IAM Role y Policy para acceso a S3 desde EC2
    - Key Pair para acceso SSH (si está configurado)
+   - RDS PostgreSQL (opcional, comentado por defecto)
 
 5. Verifica los outputs:
    ```bash
@@ -248,6 +261,13 @@ Una vez que el backend está creado, puedes usar el entorno de producción:
 | `enable_bastion` | Habilitar creación de bastion host | `true` |
 | `bastion_instance_type` | Tipo de instancia para bastion | `t4g.micro` |
 | `bastion_allowed_ssh_cidrs` | CIDRs permitidos para SSH al bastion | `["0.0.0.0/0"]` |
+| `enable_s3` | Habilitar creación de bucket S3 | `true` |
+| `s3_bucket_name` | Nombre del bucket S3 (vacío = auto-generado) | `""` |
+| `s3_enable_versioning` | Habilitar versionado en S3 | `false` |
+| `s3_enable_lifecycle_transition` | Habilitar transiciones a Glacier | `true` |
+| `s3_transition_to_glacier_ir_days` | Días antes de transición a Glacier IR | `30` |
+| `s3_noncurrent_version_expiration_days` | Días antes de expirar versiones antiguas | `90` |
+| `create_ec2_s3_role` | Crear IAM role para EC2 acceder a S3 | `true` |
 
 ### Módulo Network (`modules/network/variables.tf`)
 
@@ -302,6 +322,21 @@ Una vez que el backend está creado, puedes usar el entorno de producción:
 | `allowed_ssh_cidrs` | CIDRs permitidos para SSH | No (default: `["0.0.0.0/0"]`) |
 | `tags` | Tags comunes para todos los recursos | No |
 
+### Módulo S3 (`modules/s3/variables.tf`)
+
+| Variable | Descripción | Requerido |
+|----------|-------------|-----------|
+| `bucket_name` | Nombre del bucket S3 | Sí |
+| `enable_versioning` | Habilitar versionado | No (default: `false`) |
+| `enable_lifecycle_transition` | Habilitar transiciones a Glacier | No (default: `true`) |
+| `transition_to_glacier_ir_days` | Días antes de transición a Glacier IR | No (default: `30`) |
+| `transition_to_glacier_days` | Días antes de transición a Glacier (0=deshabilitado) | No (default: `0`) |
+| `transition_to_deep_archive_days` | Días antes de transición a Deep Archive (0=deshabilitado) | No (default: `0`) |
+| `noncurrent_version_transition_to_glacier_ir_days` | Días antes de transicionar versiones no actuales a Glacier IR | No (default: `7`) |
+| `noncurrent_version_expiration_days` | Días antes de expirar versiones antiguas (0=deshabilitado) | No (default: `90`) |
+| `allowed_principal_arns` | ARNs de IAM permitidos para acceder al bucket | No (default: `[]`) |
+| `tags` | Tags comunes para todos los recursos | No |
+
 ## 📝 Comandos Comunes
 
 ### Bootstrap
@@ -351,6 +386,11 @@ terraform show
 # Ver IPs de recursos
 terraform output bastion_public_ip
 terraform output ec2_instance_private_ip
+
+# Ver información de S3
+terraform output s3_bucket_id
+terraform output s3_bucket_arn
+terraform output ec2_s3_role_arn
 
 # Destruir infraestructura (¡cuidado!)
 terraform destroy
@@ -423,6 +463,38 @@ ssh -i ~/.ssh/zend-app-key.pem ec2-user@$BASTION_IP
 ssh ec2-user@$PRIVATE_IP
 ```
 
+#### Acceder a S3 desde la Instancia EC2
+
+La instancia EC2 tiene acceso automático al bucket S3 a través de un IAM Role:
+
+```bash
+# Conectarse a la instancia
+ssh zend-app
+
+# Obtener nombre del bucket (desde tu máquina local)
+cd envs/prod
+BUCKET_NAME=$(terraform output -raw s3_bucket_id)
+echo "Bucket: $BUCKET_NAME"
+
+# Desde la instancia EC2, listar objetos
+aws s3 ls s3://$BUCKET_NAME
+
+# Subir un archivo
+aws s3 cp archivo.txt s3://$BUCKET_NAME/
+
+# Descargar un archivo
+aws s3 cp s3://$BUCKET_NAME/archivo.txt ./
+
+# Sincronizar directorio
+aws s3 sync ./mi-directorio s3://$BUCKET_NAME/mi-directorio/
+
+# Ver información del bucket
+aws s3api get-bucket-location --bucket $BUCKET_NAME
+aws s3api get-bucket-lifecycle-configuration --bucket $BUCKET_NAME
+```
+
+**Nota**: El bucket S3 se crea con el nombre: `zend-app-prod-mxc1-app-data` (o el especificado en `s3_bucket_name`).
+
 ## ⚠️ Notas Importantes
 
 1. **Orden de ejecución**: Siempre ejecuta `bootstrap` antes de `prod` la primera vez.
@@ -442,7 +514,10 @@ ssh ec2-user@$PRIVATE_IP
    - Bastion (t4g.micro): ~$7-10 USD/mes
    - EBS (100 GB gp3): ~$8 USD/mes
    - Snapshots: ~$0.75-1.50 USD/mes
-   - **Total estimado**: ~$46-60 USD/mes
+   - S3 Standard (200 GB): ~$4.60 USD/mes
+   - S3 Glacier IR (800 GB): ~$4.00 USD/mes
+   - S3 Requests y transiciones: ~$0.25 USD/mes
+   - **Total estimado**: ~$55-70 USD/mes
 
 7. **Seguridad**: 
    - El bucket S3 tiene acceso público bloqueado y encriptación habilitada
@@ -452,6 +527,8 @@ ssh ec2-user@$PRIVATE_IP
    - VPC Endpoints minimizan tráfico externo
    - Volúmenes EBS encriptados por defecto
    - Instancias privadas solo accesibles a través del bastion host
+   - S3 bucket con encriptación AES256 y acceso restringido a IAM roles
+   - IAM Role y Policy creados automáticamente para acceso desde EC2
    - **Recomendación**: Restringir `bastion_allowed_ssh_cidrs` a tu IP específica en producción
 
 ## 🔄 Próximos Pasos
@@ -464,6 +541,8 @@ Mejoras recomendadas para el futuro:
 - [x] Crear módulo de compute (EC2) ✅
 - [x] Crear módulo de Key Pairs ✅
 - [x] Crear Bastion Host para acceso seguro ✅
+- [x] Crear módulo S3 para almacenamiento de aplicación ✅
+- [x] Implementar lifecycle policies para optimización de costos ✅
 - [ ] Agregar NAT Gateway para conectividad saliente de la subred privada
 - [ ] Crear múltiples subredes por AZ para alta disponibilidad
 - [ ] Agregar módulo de bases de datos (RDS)
