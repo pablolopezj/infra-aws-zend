@@ -21,6 +21,7 @@ Este proyecto gestiona la infraestructura completa para la aplicación Zend en A
 - **Tablas de ruteo** para subredes públicas y privadas
 - **Security Groups y Network ACLs** para seguridad de red
 - **VPC Endpoints** (S3 y DynamoDB) para minimizar tráfico externo
+- **Bastion Host** para acceso seguro a instancias privadas
 - **Instancias EC2** con configuración personalizada
 - **Volúmenes EBS** con snapshots automáticos
 - **Key Pairs** para acceso SSH seguro
@@ -51,6 +52,10 @@ infra-aws-zend/
     │   ├── variables.tf
     │   └── outputs.tf
     ├── keypair/             # Módulo para Key Pairs SSH
+    │   ├── main.tf
+    │   ├── variables.tf
+    │   └── outputs.tf
+    ├── bastion/             # Módulo para Bastion Host
     │   ├── main.tf
     │   ├── variables.tf
     │   └── outputs.tf
@@ -153,8 +158,9 @@ Una vez que el backend está creado, puedes usar el entorno de producción:
    - Security Groups (público y privado)
    - Network ACLs (público y privado)
    - VPC Endpoints para S3 y DynamoDB
-   - Instancia EC2 (t4g.medium) con Amazon Linux 2023
+   - Instancia EC2 (t4g.medium) con Amazon Linux 2023 en subnet privada
    - Volumen EBS (100 GB gp3) con snapshots automáticos (1 vez al día)
+   - Bastion Host (t4g.micro) en subnet pública para acceso seguro
    - Key Pair para acceso SSH (si está configurado)
 
 5. Verifica los outputs:
@@ -176,6 +182,12 @@ Una vez que el backend está creado, puedes usar el entorno de producción:
 │  │   (10.0.1.0/24)      │    │   (10.0.2.0/24)      │      │
 │  │   mx-central-1a      │    │   mx-central-1b       │      │
 │  │                      │    │                      │      │
+│  │  ┌──────────────┐    │    │  ┌──────────────┐    │      │
+│  │  │ Bastion Host │    │    │  │ EC2 Instance │    │      │
+│  │  │ (t4g.micro)  │    │    │  │ (t4g.medium) │    │      │
+│  │  │              │    │    │  │ + EBS 100GB │    │      │
+│  │  └──────────────┘    │    │  └──────────────┘    │      │
+│  │                      │    │                      │      │
 │  │  Security Group      │    │  Security Group      │      │
 │  │  (Público)           │    │  (Privado)           │      │
 │  │                      │    │                      │      │
@@ -186,12 +198,8 @@ Una vez que el backend está creado, puedes usar el entorno de producción:
 │  │  (Pública)           │    │  (Privada)           │      │
 │  └──────────┬───────────┘    └──────────┬───────────┘      │
 │             │                           │                  │
-│             │                           │                  │
-│             │    ┌──────────────┐       │                  │
-│             │    │  EC2 Instance│       │                  │
-│             │    │  (t4g.medium)│       │                  │
-│             │    │  + EBS 100GB│       │                  │
-│             │    └──────────────┘       │                  │
+│             │        SSH via Bastion    │                  │
+│             └───────────────────────────┘                  │
 └─────────────┼───────────────────────────┼──────────────────┘
               │                           │
               │                           │
@@ -237,6 +245,9 @@ Una vez que el backend está creado, puedes usar el entorno de producción:
 | `ec2_subnet_tier` | Subnet para EC2 (public/private) | `private` |
 | `create_key_pair` | Crear key pair con Terraform | `false` |
 | `public_key_path` | Ruta a la clave pública SSH | `""` |
+| `enable_bastion` | Habilitar creación de bastion host | `true` |
+| `bastion_instance_type` | Tipo de instancia para bastion | `t4g.micro` |
+| `bastion_allowed_ssh_cidrs` | CIDRs permitidos para SSH al bastion | `["0.0.0.0/0"]` |
 
 ### Módulo Network (`modules/network/variables.tf`)
 
@@ -277,6 +288,19 @@ Una vez que el backend está creado, puedes usar el entorno de producción:
 | `key_name` | Nombre del key pair en AWS | Sí |
 | `public_key` | Contenido de la clave pública SSH | Sí |
 | `tags` | Tags para el key pair | No |
+
+### Módulo Bastion (`modules/bastion/variables.tf`)
+
+| Variable | Descripción | Requerido |
+|----------|-------------|-----------|
+| `name_prefix` | Prefijo para nombres de recursos | Sí |
+| `vpc_id` | ID de la VPC | Sí |
+| `subnet_id` | ID de la subnet pública | Sí |
+| `vpc_cidr` | CIDR block de la VPC | Sí |
+| `instance_type` | Tipo de instancia para bastion | No (default: `t4g.micro`) |
+| `key_name` | Nombre del key pair para SSH | Sí |
+| `allowed_ssh_cidrs` | CIDRs permitidos para SSH | No (default: `["0.0.0.0/0"]`) |
+| `tags` | Tags comunes para todos los recursos | No |
 
 ## 📝 Comandos Comunes
 
@@ -324,8 +348,79 @@ terraform output
 # Ver estado
 terraform show
 
+# Ver IPs de recursos
+terraform output bastion_public_ip
+terraform output ec2_instance_private_ip
+
 # Destruir infraestructura (¡cuidado!)
 terraform destroy
+```
+
+### Conectarse a las Instancias
+
+#### Conectarse al Bastion
+
+```bash
+cd envs/prod
+
+# Obtener IP del bastion
+BASTION_IP=$(terraform output -raw bastion_public_ip)
+
+# Conectarse
+ssh -i ~/.ssh/zend-app-key.pem ec2-user@$BASTION_IP
+```
+
+#### Conectarse a la Instancia Privada (a través del Bastion)
+
+**Opción 1: Usando configuración SSH (recomendado)**
+
+Primero, actualiza tu configuración SSH:
+
+```bash
+# Ejecutar script de actualización
+./actualizar_ssh_config.sh
+
+# O manualmente, agrega a ~/.ssh/config:
+# Host bastion-zend
+#     HostName <BASTION_IP>
+#     User ec2-user
+#     IdentityFile ~/.ssh/zend-app-key.pem
+#     StrictHostKeyChecking no
+#
+# Host zend-app
+#     HostName <PRIVATE_IP>
+#     User ec2-user
+#     IdentityFile ~/.ssh/zend-app-key.pem
+#     ProxyCommand ssh -W %h:%p bastion-zend
+#     StrictHostKeyChecking no
+```
+
+Luego conectarte simplemente:
+
+```bash
+ssh zend-app
+```
+
+**Opción 2: Comando directo**
+
+```bash
+cd envs/prod
+BASTION_IP=$(terraform output -raw bastion_public_ip)
+PRIVATE_IP=$(terraform output -raw ec2_instance_private_ip)
+
+ssh -i ~/.ssh/zend-app-key.pem \
+    -o ProxyCommand="ssh -i ~/.ssh/zend-app-key.pem -W %h:%p ec2-user@$BASTION_IP" \
+    ec2-user@$PRIVATE_IP
+```
+
+**Opción 3: En dos pasos**
+
+```bash
+# 1. Conectarse al bastion
+ssh -i ~/.ssh/zend-app-key.pem ec2-user@$BASTION_IP
+
+# 2. Desde el bastion, conectarse a la instancia privada
+ssh ec2-user@$PRIVATE_IP
 ```
 
 ## ⚠️ Notas Importantes
@@ -344,14 +439,20 @@ terraform destroy
    - Backend (S3 + DynamoDB): ~$0-1 USD/mes
    - VPC y Networking: Gratis
    - EC2 (t4g.medium): ~$30-40 USD/mes (depende de Savings Plans)
+   - Bastion (t4g.micro): ~$7-10 USD/mes
    - EBS (100 GB gp3): ~$8 USD/mes
    - Snapshots: ~$0.75-1.50 USD/mes
+   - **Total estimado**: ~$46-60 USD/mes
 
 7. **Seguridad**: 
    - El bucket S3 tiene acceso público bloqueado y encriptación habilitada
    - Security Groups y NACLs configurados por defecto
+   - Network ACL público permite SSH (puerto 22) para acceso al bastion
+   - Security Group privado permite SSH desde subnet pública (bastion access)
    - VPC Endpoints minimizan tráfico externo
    - Volúmenes EBS encriptados por defecto
+   - Instancias privadas solo accesibles a través del bastion host
+   - **Recomendación**: Restringir `bastion_allowed_ssh_cidrs` a tu IP específica en producción
 
 ## 🔄 Próximos Pasos
 
@@ -362,6 +463,7 @@ Mejoras recomendadas para el futuro:
 - [x] Agregar validaciones en variables ✅
 - [x] Crear módulo de compute (EC2) ✅
 - [x] Crear módulo de Key Pairs ✅
+- [x] Crear Bastion Host para acceso seguro ✅
 - [ ] Agregar NAT Gateway para conectividad saliente de la subred privada
 - [ ] Crear múltiples subredes por AZ para alta disponibilidad
 - [ ] Agregar módulo de bases de datos (RDS)
@@ -375,6 +477,17 @@ Mejoras recomendadas para el futuro:
 - **[VERIFICACION.md](VERIFICACION.md)**: Guía completa para verificar que todo se creó correctamente
 - **[ACTUALIZACION.md](ACTUALIZACION.md)**: Guía para actualizar recursos de seguridad
 - **[SOLUCION_LOCK.md](SOLUCION_LOCK.md)**: Solución de problemas con State Locks
+- **[USO_BASTION.md](USO_BASTION.md)**: Guía completa para usar el Bastion Host
+- **[TROUBLESHOOTING_SSH.md](TROUBLESHOOTING_SSH.md)**: Solución de problemas de conexión SSH
+
+## 🛠️ Scripts Útiles
+
+El proyecto incluye varios scripts para facilitar el trabajo:
+
+- **`actualizar_ssh_config.sh`**: Actualiza automáticamente `~/.ssh/config` con las IPs actuales
+- **`limpiar_ssh_config.sh`**: Limpia y actualiza la configuración SSH eliminando duplicados
+- **`diagnostico_bastion.sh`**: Diagnostica problemas de conexión al bastion
+- **`CONFIG_SSH_CORRECTO.txt`**: Plantilla de configuración SSH correcta
 
 ## 📚 Recursos
 
