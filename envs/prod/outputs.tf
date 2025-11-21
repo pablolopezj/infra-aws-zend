@@ -89,3 +89,39 @@ output "bastion_dns_name" {
   value       = var.enable_bastion ? module.bastion[0].bastion_dns_name : null
   description = "Public DNS name of the bastion host"
 }
+
+# ============================================================================
+# Outputs de RDS PostgreSQL
+# ============================================================================
+# NOTA: Estos outputs están comentados porque el módulo RDS está comentado.
+# Descomenta estos outputs cuando descomentes el módulo RDS en main.tf
+#
+# output "rds_instance_id" {
+#   value       = var.enable_rds ? module.rds[0].db_instance_id : null
+#   description = "RDS instance identifier"
+# }
+#
+# output "rds_instance_endpoint" {
+#   value       = var.enable_rds ? module.rds[0].db_instance_endpoint : null
+#   description = "RDS instance endpoint (hostname:port)"
+# }
+#
+# output "rds_instance_address" {
+#   value       = var.enable_rds ? module.rds[0].db_instance_address : null
+#   description = "RDS instance hostname"
+# }
+#
+# output "rds_instance_port" {
+#   value       = var.enable_rds ? module.rds[0].db_instance_port : null
+#   description = "RDS instance port"
+# }
+#
+# output "rds_database_name" {
+#   value       = var.enable_rds ? module.rds[0].db_instance_name : null
+#   description = "Name of the initial database"
+# }
+#
+# output "rds_security_group_id" {
+#   value       = var.enable_rds ? module.rds[0].db_security_group_id : null
+#   description = "Security Group ID for RDS"
+# }

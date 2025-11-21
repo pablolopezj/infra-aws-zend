@@ -165,3 +165,138 @@ variable "bastion_allowed_ssh_cidrs" {
   description = "CIDR blocks allowed to SSH to bastion (use [\"1.2.3.4/32\"] for specific IP, [\"0.0.0.0/0\"] for anywhere)"
   default     = ["0.0.0.0/0"]
 }
+
+# ============================================================================
+# Variables para RDS PostgreSQL
+# ============================================================================
+
+variable "enable_rds" {
+  type        = bool
+  description = "Enable RDS PostgreSQL instance creation"
+  default     = true
+}
+
+variable "rds_instance_class" {
+  type        = string
+  description = "RDS instance class"
+  default     = "db.t4g.medium"
+
+  validation {
+    condition     = can(regex("^db\\.(t[234]g?|r[456]g?)\\.", var.rds_instance_class))
+    error_message = "RDS instance class must be a valid RDS instance type (e.g., db.t4g.medium)."
+  }
+}
+
+variable "rds_allocated_storage" {
+  type        = number
+  description = "Allocated storage for RDS in GB"
+  default     = 200
+
+  validation {
+    condition     = var.rds_allocated_storage >= 20 && var.rds_allocated_storage <= 65536
+    error_message = "RDS allocated storage must be between 20 and 65536 GB."
+  }
+}
+
+variable "rds_storage_type" {
+  type        = string
+  description = "RDS storage type (gp2, gp3, io1, io2)"
+  default     = "gp3"
+
+  validation {
+    condition     = contains(["gp2", "gp3", "io1", "io2"], var.rds_storage_type)
+    error_message = "RDS storage type must be one of: gp2, gp3, io1, io2."
+  }
+}
+
+variable "rds_database_name" {
+  type        = string
+  description = "Name of the initial database"
+  default     = "zenddb"
+
+  validation {
+    condition     = length(var.rds_database_name) >= 1 && length(var.rds_database_name) <= 63
+    error_message = "Database name must be between 1 and 63 characters."
+  }
+}
+
+variable "rds_master_username" {
+  type        = string
+  description = "Master username for RDS"
+  default     = "postgres"
+
+  validation {
+    condition     = length(var.rds_master_username) >= 1 && length(var.rds_master_username) <= 16
+    error_message = "Master username must be between 1 and 16 characters."
+  }
+}
+
+variable "rds_master_password" {
+  type        = string
+  description = "Master password for RDS"
+  sensitive   = true
+  default     = "" # Debe ser proporcionado via terraform.tfvars o TF_VAR_rds_master_password
+
+  validation {
+    condition     = var.rds_master_password == "" || (length(var.rds_master_password) >= 8 && length(var.rds_master_password) <= 128)
+    error_message = "RDS master password must be between 8 and 128 characters if provided."
+  }
+}
+
+variable "rds_backup_retention_days" {
+  type        = number
+  description = "Number of days to retain automated backups (0-35)"
+  default     = 7
+
+  validation {
+    condition     = var.rds_backup_retention_days >= 0 && var.rds_backup_retention_days <= 35
+    error_message = "Backup retention days must be between 0 and 35."
+  }
+}
+
+variable "rds_backup_window" {
+  type        = string
+  description = "Preferred backup window (UTC)"
+  default     = "03:00-04:00"
+}
+
+variable "rds_maintenance_window" {
+  type        = string
+  description = "Preferred maintenance window (UTC)"
+  default     = "sun:04:00-sun:05:00"
+}
+
+variable "rds_skip_final_snapshot" {
+  type        = bool
+  description = "Skip final snapshot when destroying the RDS instance"
+  default     = false
+}
+
+variable "rds_enable_performance_insights" {
+  type        = bool
+  description = "Enable Performance Insights for RDS"
+  default     = false
+}
+
+variable "rds_monitoring_interval" {
+  type        = number
+  description = "Enhanced monitoring interval in seconds (0, 60, 300, 3600). 0 to disable"
+  default     = 0
+
+  validation {
+    condition     = contains([0, 60, 300, 3600], var.rds_monitoring_interval)
+    error_message = "Monitoring interval must be 0, 60, 300, or 3600 seconds."
+  }
+}
+
+variable "rds_engine_version" {
+  type        = string
+  description = "PostgreSQL engine version (e.g., '16', '15', '14'). Leave empty for latest"
+  default     = "16"
+}
+
+variable "rds_parameter_group_family" {
+  type        = string
+  description = "Parameter group family (e.g., 'postgres16', 'postgres15')"
+  default     = "postgres16"
+}

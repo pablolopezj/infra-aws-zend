@@ -81,3 +81,47 @@ module "bastion" {
 
   tags = local.common_tags
 }
+
+# ============================================================================
+# Módulo de RDS PostgreSQL
+# ============================================================================
+# NOTA: Este módulo está comentado temporalmente. Para activarlo:
+# 1. Descomenta el bloque de código siguiente
+# 2. Asegúrate de tener configurado rds_master_password en terraform.tfvars
+# 3. Ejecuta: terraform init && terraform plan && terraform apply
+#
+# module "rds" {
+#   count  = var.enable_rds ? 1 : 0
+#   source = "../../modules/rds"
+#
+#   name_prefix = local.name_prefix
+#
+#   vpc_id     = module.network.vpc_id
+#   vpc_cidr   = var.vpc_cidr
+#   subnet_ids = [module.network.private_subnet_id] # RDS en subnet privada
+#   availability_zone = var.private_subnet_az # Single-AZ deployment
+#
+#   instance_class    = var.rds_instance_class
+#   allocated_storage = var.rds_allocated_storage
+#   storage_type      = var.rds_storage_type
+#
+#   database_name  = var.rds_database_name
+#   master_username = var.rds_master_username
+#   master_password = var.rds_master_password != "" ? var.rds_master_password : (var.enable_rds ? error("rds_master_password must be provided when enable_rds is true") : "")
+#
+#   engine_version         = var.rds_engine_version
+#   parameter_group_family = var.rds_parameter_group_family
+#
+#   # Permitir acceso desde la instancia EC2 privada
+#   allowed_security_group_ids = var.enable_ec2_instance && var.ec2_subnet_tier == "private" ? [module.network.private_security_group_id] : []
+#
+#   backup_retention_days = var.rds_backup_retention_days
+#   backup_window         = var.rds_backup_window
+#   maintenance_window    = var.rds_maintenance_window
+#   skip_final_snapshot   = var.rds_skip_final_snapshot
+#
+#   enable_performance_insights = var.rds_enable_performance_insights
+#   monitoring_interval         = var.rds_monitoring_interval
+#
+#   tags = local.common_tags
+# }

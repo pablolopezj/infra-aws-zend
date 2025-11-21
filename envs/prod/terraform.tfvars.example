@@ -1,0 +1,11 @@
+# Ejemplo de archivo terraform.tfvars
+# Copia este archivo como terraform.tfvars y completa los valores
+
+# Configuración de RDS PostgreSQL
+rds_master_password = "TU_CONTRASEÑA_SEGURA_AQUI" # Mínimo 8 caracteres
+
+# Opcional: Personalizar otras configuraciones de RDS
+# rds_database_name = "zenddb"
+# rds_master_username = "postgres"
+# rds_backup_retention_days = 7
+
