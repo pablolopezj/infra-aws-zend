@@ -49,6 +49,10 @@ resource "aws_s3_bucket_lifecycle_configuration" "app" {
     id     = "transition-to-glacier-ir"
     status = var.enable_lifecycle_transition ? "Enabled" : "Disabled"
 
+    # Filtro: aplicar a todos los objetos (sin prefijo)
+    filter {
+    }
+
     # Transición a Glacier Instant Retrieval después de X días
     transition {
       days          = var.transition_to_glacier_ir_days
@@ -95,6 +99,10 @@ resource "aws_s3_bucket_lifecycle_configuration" "app" {
   rule {
     id     = "abort-incomplete-multipart-uploads"
     status = "Enabled"
+
+    # Filtro: aplicar a todos los objetos
+    filter {
+    }
 
     abort_incomplete_multipart_upload {
       days_after_initiation = 7
