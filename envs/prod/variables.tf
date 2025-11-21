@@ -390,3 +390,61 @@ variable "ec2_iam_role_arn" {
   description = "ARN of existing IAM role for EC2 to access S3 (if not creating new role)"
   default     = ""
 }
+
+# ============================================================================
+# Variables para CloudFront + WAF + ALB
+# ============================================================================
+
+variable "enable_alb" {
+  type        = bool
+  description = "Enable Application Load Balancer. Required if EC2 is in private subnet. Optional if EC2 is in public subnet."
+  default     = true
+}
+
+variable "enable_cloudfront" {
+  type        = bool
+  description = "Enable CloudFront distribution"
+  default     = true
+}
+
+variable "enable_waf" {
+  type        = bool
+  description = "Enable WAF for CloudFront"
+  default     = true
+}
+
+variable "cloudfront_price_class" {
+  type        = string
+  description = "CloudFront price class (PriceClass_All, PriceClass_200, PriceClass_100)"
+  default     = "PriceClass_100"
+}
+
+variable "cloudfront_default_root_object" {
+  type        = string
+  description = "Default root object for CloudFront (e.g., index.html)"
+  default     = "index.html"
+}
+
+variable "waf_enable_rate_limiting" {
+  type        = bool
+  description = "Enable rate limiting in WAF"
+  default     = false
+}
+
+variable "waf_rate_limit" {
+  type        = number
+  description = "WAF rate limit (requests per 5 minutes per IP)"
+  default     = 2000
+}
+
+variable "alb_certificate_arn" {
+  type        = string
+  description = "ACM certificate ARN for ALB HTTPS listener (empty = HTTP only)"
+  default     = ""
+}
+
+variable "cloudfront_origin_s3_bucket" {
+  type        = string
+  description = "S3 bucket name to use as CloudFront origin (empty = use ALB or EC2). If set, CloudFront will point to S3 instead of ALB/EC2."
+  default     = ""
+}

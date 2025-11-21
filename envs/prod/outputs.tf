@@ -151,3 +151,52 @@ output "ec2_s3_role_arn" {
   value       = var.enable_ec2_instance && var.enable_s3 && var.create_ec2_s3_role ? aws_iam_role.ec2_s3_access[0].arn : null
   description = "ARN of the IAM role for EC2 to access S3"
 }
+
+# ============================================================================
+# Outputs de ALB
+# ============================================================================
+output "alb_dns_name" {
+  value       = var.enable_alb && var.enable_cloudfront ? module.alb[0].alb_dns_name : null
+  description = "DNS name of the Application Load Balancer"
+}
+
+output "alb_arn" {
+  value       = var.enable_alb && var.enable_cloudfront ? module.alb[0].alb_arn : null
+  description = "ARN of the Application Load Balancer"
+}
+
+output "alb_target_group_arn" {
+  value       = var.enable_alb && var.enable_cloudfront ? module.alb[0].target_group_arn : null
+  description = "ARN of the ALB target group"
+}
+
+# ============================================================================
+# Outputs de WAF
+# ============================================================================
+output "waf_web_acl_id" {
+  value       = var.enable_waf && var.enable_cloudfront ? module.waf[0].web_acl_id : null
+  description = "WAF Web ACL ID"
+}
+
+output "waf_web_acl_arn" {
+  value       = var.enable_waf && var.enable_cloudfront ? module.waf[0].web_acl_arn : null
+  description = "WAF Web ACL ARN"
+}
+
+# ============================================================================
+# Outputs de CloudFront
+# ============================================================================
+output "cloudfront_distribution_id" {
+  value       = var.enable_cloudfront ? module.cloudfront[0].distribution_id : null
+  description = "CloudFront distribution ID"
+}
+
+output "cloudfront_distribution_domain_name" {
+  value       = var.enable_cloudfront ? module.cloudfront[0].distribution_domain_name : null
+  description = "CloudFront distribution domain name (use this URL to access your application)"
+}
+
+output "cloudfront_distribution_arn" {
+  value       = var.enable_cloudfront ? module.cloudfront[0].distribution_arn : null
+  description = "CloudFront distribution ARN"
+}

@@ -209,3 +209,105 @@ module "s3" {
 #
 #   tags = local.common_tags
 # }
+
+# ============================================================================
+# Módulo de ALB (Application Load Balancer)
+# ============================================================================
+# NOTA: ALB es opcional. Solo se requiere si:
+# 1. EC2 está en subnet privada Y CloudFront necesita acceso
+# 2. Necesitas alta disponibilidad y load balancing
+# 3. Si EC2 está en subnet pública, CloudFront puede apuntar directamente
+module "alb" {
+  count  = var.enable_alb && var.enable_cloudfront ? 1 : 0
+  source = "../../modules/alb"
+
+  name_prefix = local.name_prefix
+
+  vpc_id     = module.network.vpc_id
+  subnet_ids = [module.network.public_subnet_id] # ALB en subnet pública
+
+  target_instance_ids = var.enable_ec2_instance ? [module.compute[0].instance_id] : []
+
+  target_port     = 80
+  target_protocol = "HTTP"
+
+  certificate_arn = var.alb_certificate_arn != "" ? var.alb_certificate_arn : null
+
+  health_check_path     = "/"
+  health_check_protocol = "HTTP"
+  health_check_matcher  = "200"
+
+  enable_deletion_protection = false # Cambiar a true en producción
+
+  tags = local.common_tags
+}
+
+# ============================================================================
+# Módulo de WAF (Web Application Firewall)
+# ============================================================================
+# NOTA: WAF para CloudFront DEBE crearse en us-east-1
+# El provider aws.us_east_1 está configurado en providers.tf
+module "waf" {
+  count  = var.enable_waf && var.enable_cloudfront ? 1 : 0
+  source = "../../modules/waf"
+
+  providers = {
+    aws = aws.us_east_1 # CRÍTICO: WAF para CloudFront requiere us-east-1
+  }
+
+  name_prefix = local.name_prefix
+
+  enable_rate_limiting = var.waf_enable_rate_limiting
+  rate_limit          = var.waf_rate_limit
+
+  tags = local.common_tags
+}
+
+# ============================================================================
+# Módulo de CloudFront
+# ============================================================================
+# NOTA: CloudFront puede apuntar a:
+# 1. ALB (si enable_alb=true) - Recomendado si EC2 está en subnet privada
+# 2. EC2 directo (si enable_alb=false y EC2 está en subnet pública)
+# 3. S3 bucket (si se especifica cloudfront_origin_s3_bucket)
+module "cloudfront" {
+  count  = var.enable_cloudfront ? 1 : 0
+  source = "../../modules/cloudfront"
+
+  name_prefix = local.name_prefix
+
+  # Origen: ALB, S3, o EC2 directo (solo si está en subnet pública)
+  # Prioridad: S3 > ALB > EC2 directo (solo si pública)
+  origin_domain_name = var.cloudfront_origin_s3_bucket != "" ? "${var.cloudfront_origin_s3_bucket}.s3.${var.aws_region}.amazonaws.com" : (
+    var.enable_alb && var.enable_cloudfront ? module.alb[0].alb_dns_name : (
+      var.enable_ec2_instance && var.ec2_subnet_tier == "public" ? module.compute[0].instance_public_ip : ""
+    )
+  )
+  
+  origin_id = var.cloudfront_origin_s3_bucket != "" ? "s3-origin" : (
+    var.enable_alb && var.enable_cloudfront ? "alb-origin" : (
+      var.enable_ec2_instance && var.ec2_subnet_tier == "public" ? "ec2-origin" : "default-origin"
+    )
+  )
+
+  # Protocolo según el origen
+  origin_protocol_policy = var.cloudfront_origin_s3_bucket != "" ? "https-only" : (
+    var.enable_alb ? "https-only" : "http-only"
+  )
+  origin_http_port  = 80
+  origin_https_port = 443
+
+  # WAF asociado (NO requiere ALB)
+  waf_web_acl_id = var.enable_waf && var.enable_cloudfront ? module.waf[0].web_acl_arn : ""
+
+  # Configuración de caché
+  price_class         = var.cloudfront_price_class
+  default_root_object = var.cloudfront_default_root_object
+  enable_compression  = true
+
+  # Viewer protocol policy: redirigir HTTP a HTTPS
+  viewer_protocol_policy = "redirect-to-https"
+  use_default_certificate = true # Usar certificado CloudFront por defecto
+
+  tags = local.common_tags
+}
