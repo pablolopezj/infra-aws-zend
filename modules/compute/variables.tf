@@ -127,3 +127,9 @@ variable "user_data" {
   default     = ""
 }
 
+variable "iam_instance_profile" {
+  type        = string
+  description = "IAM instance profile name to attach to the EC2 instance (for S3 access, etc.)"
+  default     = ""
+}
+

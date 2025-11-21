@@ -32,6 +32,36 @@ module "network" {
   name_prefix = local.name_prefix
 }
 
+# IAM Role para EC2 para acceder a S3 (debe crearse antes del módulo compute)
+resource "aws_iam_role" "ec2_s3_access" {
+  count = var.enable_ec2_instance && var.enable_s3 && var.create_ec2_s3_role ? 1 : 0
+  name  = "${local.name_prefix}-ec2-s3-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "ec2.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = local.common_tags
+}
+
+# Instance Profile para EC2
+resource "aws_iam_instance_profile" "ec2_s3_access" {
+  count = var.enable_ec2_instance && var.enable_s3 && var.create_ec2_s3_role ? 1 : 0
+  name  = "${local.name_prefix}-ec2-s3-profile"
+  role  = aws_iam_role.ec2_s3_access[0].name
+
+  tags = local.common_tags
+}
+
 # Módulo de Compute (EC2)
 module "compute" {
   count  = var.enable_ec2_instance ? 1 : 0
@@ -60,7 +90,40 @@ module "compute" {
   # Monitorización desactivada
   monitoring_enabled = false
 
+  # IAM instance profile para acceso a S3
+  iam_instance_profile = var.enable_s3 && var.create_ec2_s3_role ? aws_iam_instance_profile.ec2_s3_access[0].name : ""
+
   tags = local.common_tags
+}
+
+# IAM Policy para acceso a S3 (debe crearse después del módulo S3)
+resource "aws_iam_role_policy" "ec2_s3_access" {
+  count = var.enable_ec2_instance && var.enable_s3 && var.create_ec2_s3_role ? 1 : 0
+  name  = "${local.name_prefix}-ec2-s3-policy"
+  role  = aws_iam_role.ec2_s3_access[0].id
+
+  policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Effect = "Allow"
+        Action = [
+          "s3:GetObject",
+          "s3:PutObject",
+          "s3:DeleteObject",
+          "s3:ListBucket",
+          "s3:GetBucketLocation",
+          "s3:ListBucketMultipartUploads",
+          "s3:AbortMultipartUpload",
+          "s3:ListMultipartUploadParts"
+        ]
+        Resource = [
+          var.enable_s3 ? module.s3[0].bucket_arn : "",
+          var.enable_s3 ? "${module.s3[0].bucket_arn}/*" : ""
+        ]
+      }
+    ]
+  })
 }
 
 # Bastion Host
@@ -78,6 +141,27 @@ module "bastion" {
   key_name      = var.ec2_key_name != "" ? var.ec2_key_name : (var.create_key_pair && var.public_key_path != "" ? module.keypair[0].key_name : null)
 
   allowed_ssh_cidrs = var.bastion_allowed_ssh_cidrs
+
+  tags = local.common_tags
+}
+
+# Módulo de S3 para la aplicación
+module "s3" {
+  count  = var.enable_s3 ? 1 : 0
+  source = "../../modules/s3"
+
+  bucket_name = var.s3_bucket_name != "" ? var.s3_bucket_name : "${local.name_prefix}-app-data"
+
+  enable_versioning            = var.s3_enable_versioning
+  enable_lifecycle_transition  = var.s3_enable_lifecycle_transition
+  transition_to_glacier_ir_days = var.s3_transition_to_glacier_ir_days
+  transition_to_glacier_days   = var.s3_transition_to_glacier_days
+  transition_to_deep_archive_days = var.s3_transition_to_deep_archive_days
+  noncurrent_version_transition_to_glacier_ir_days = var.s3_noncurrent_version_transition_to_glacier_ir_days
+  noncurrent_version_expiration_days = var.s3_noncurrent_version_expiration_days
+
+  # Permitir acceso desde la instancia EC2 si tiene IAM role
+  allowed_principal_arns = var.enable_ec2_instance && var.create_ec2_s3_role ? [aws_iam_role.ec2_s3_access[0].arn] : (var.ec2_iam_role_arn != "" ? [var.ec2_iam_role_arn] : [])
 
   tags = local.common_tags
 }

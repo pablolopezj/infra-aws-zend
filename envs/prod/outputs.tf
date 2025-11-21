@@ -125,3 +125,29 @@ output "bastion_dns_name" {
 #   value       = var.enable_rds ? module.rds[0].db_security_group_id : null
 #   description = "Security Group ID for RDS"
 # }
+
+# Outputs de S3
+output "s3_bucket_id" {
+  value       = var.enable_s3 ? module.s3[0].bucket_id : null
+  description = "Name (id) of the S3 bucket"
+}
+
+output "s3_bucket_arn" {
+  value       = var.enable_s3 ? module.s3[0].bucket_arn : null
+  description = "ARN of the S3 bucket"
+}
+
+output "s3_bucket_domain_name" {
+  value       = var.enable_s3 ? module.s3[0].bucket_domain_name : null
+  description = "Domain name of the S3 bucket"
+}
+
+output "s3_bucket_regional_domain_name" {
+  value       = var.enable_s3 ? module.s3[0].bucket_regional_domain_name : null
+  description = "Region-specific domain name of the S3 bucket"
+}
+
+output "ec2_s3_role_arn" {
+  value       = var.enable_ec2_instance && var.enable_s3 && var.create_ec2_s3_role ? aws_iam_role.ec2_s3_access[0].arn : null
+  description = "ARN of the IAM role for EC2 to access S3"
+}

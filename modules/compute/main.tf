@@ -32,6 +32,9 @@ resource "aws_instance" "this" {
   # Key pair (opcional)
   key_name = var.key_name != "" ? var.key_name : null
 
+  # IAM instance profile (opcional, para acceso a S3 u otros servicios)
+  iam_instance_profile = var.iam_instance_profile != "" ? var.iam_instance_profile : null
+
   # User data
   user_data = var.user_data != "" ? var.user_data : null
 

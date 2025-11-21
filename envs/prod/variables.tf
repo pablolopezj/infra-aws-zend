@@ -300,3 +300,93 @@ variable "rds_parameter_group_family" {
   description = "Parameter group family (e.g., 'postgres16', 'postgres15')"
   default     = "postgres16"
 }
+
+# ============================================================================
+# Variables para S3
+# ============================================================================
+
+variable "enable_s3" {
+  type        = bool
+  description = "Enable S3 bucket creation for application"
+  default     = true
+}
+
+variable "s3_bucket_name" {
+  type        = string
+  description = "Name of the S3 bucket for the application"
+  default     = "" # Se generará automáticamente si está vacío
+
+  validation {
+    condition     = var.s3_bucket_name == "" || (length(var.s3_bucket_name) >= 3 && length(var.s3_bucket_name) <= 63)
+    error_message = "S3 bucket name must be between 3 and 63 characters if provided."
+  }
+}
+
+variable "s3_enable_versioning" {
+  type        = bool
+  description = "Enable versioning for S3 bucket"
+  default     = false
+}
+
+variable "s3_enable_lifecycle_transition" {
+  type        = bool
+  description = "Enable lifecycle transition to Glacier Instant Retrieval"
+  default     = true
+}
+
+variable "s3_transition_to_glacier_ir_days" {
+  type        = number
+  description = "Number of days before transitioning objects to Glacier Instant Retrieval"
+  default     = 30
+
+  validation {
+    condition     = var.s3_transition_to_glacier_ir_days > 0
+    error_message = "Transition days must be greater than 0."
+  }
+}
+
+variable "s3_transition_to_glacier_days" {
+  type        = number
+  description = "Number of days before transitioning objects to Glacier (0 to disable)"
+  default     = 0
+}
+
+variable "s3_transition_to_deep_archive_days" {
+  type        = number
+  description = "Number of days before transitioning objects to Deep Archive (0 to disable)"
+  default     = 0
+}
+
+variable "s3_noncurrent_version_transition_to_glacier_ir_days" {
+  type        = number
+  description = "Number of days before transitioning non-current versions to Glacier IR (0 to disable)"
+  default     = 7
+
+  validation {
+    condition     = var.s3_noncurrent_version_transition_to_glacier_ir_days >= 0
+    error_message = "Transition days must be 0 or greater."
+  }
+}
+
+variable "s3_noncurrent_version_expiration_days" {
+  type        = number
+  description = "Number of days before expiring non-current versions (0 to disable)"
+  default     = 90
+
+  validation {
+    condition     = var.s3_noncurrent_version_expiration_days == 0 || var.s3_noncurrent_version_expiration_days >= var.s3_noncurrent_version_transition_to_glacier_ir_days
+    error_message = "Expiration days must be 0 or greater than transition days."
+  }
+}
+
+variable "create_ec2_s3_role" {
+  type        = bool
+  description = "Create IAM role and instance profile for EC2 to access S3"
+  default     = true
+}
+
+variable "ec2_iam_role_arn" {
+  type        = string
+  description = "ARN of existing IAM role for EC2 to access S3 (if not creating new role)"
+  default     = ""
+}
