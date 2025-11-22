@@ -76,6 +76,12 @@ variable "allowed_principal_arns" {
   default     = []
 }
 
+variable "cloudfront_oai_iam_arn" {
+  type        = string
+  description = "IAM ARN of CloudFront Origin Access Identity (OAI) for secure S3 access via CloudFront. Leave empty to disable OAI access."
+  default     = ""
+}
+
 variable "enable_logging" {
   type        = bool
   description = "Enable access logging for the bucket"

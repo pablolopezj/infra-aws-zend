@@ -39,10 +39,10 @@ resource "aws_instance" "this" {
     echo "Bastion host initialized at $(date)" >> /var/log/bastion-init.log
   EOF
 
-  # Root volume pequeño (bastion no necesita mucho espacio)
+  # Root volume (mínimo 30GB requerido por el snapshot)
   root_block_device {
     volume_type = "gp3"
-    volume_size = 8  # 8 GB es suficiente para un bastion
+    volume_size = 30  # Mínimo 30GB requerido por el snapshot
     encrypted   = true
 
     tags = merge(

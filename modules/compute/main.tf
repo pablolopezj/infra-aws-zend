@@ -41,10 +41,10 @@ resource "aws_instance" "this" {
   # Tenencia: Instancias compartidas (default)
   # No se especifica tenancy, usa el default (shared)
 
-  # Root volume
+  # Root volume (mínimo 30GB requerido por el snapshot)
   root_block_device {
     volume_type = "gp3"
-    volume_size = 20
+    volume_size = 30  # Mínimo 30GB requerido por el snapshot
     encrypted   = true
 
     tags = merge(

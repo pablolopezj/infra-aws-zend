@@ -110,33 +110,48 @@ resource "aws_s3_bucket_lifecycle_configuration" "app" {
   }
 }
 
-# Política del bucket para permitir acceso desde EC2 (si se especifica)
+# Política del bucket para permitir acceso desde EC2 y/o CloudFront OAI
 resource "aws_s3_bucket_policy" "app" {
-  count  = length(var.allowed_principal_arns) > 0 ? 1 : 0
+  count  = length(var.allowed_principal_arns) > 0 || var.cloudfront_oai_iam_arn != "" ? 1 : 0
   bucket = aws_s3_bucket.app.id
 
   policy = jsonencode({
     Version = "2012-10-17"
-    Statement = [
-      {
-        Sid    = "AllowAccessFromEC2"
-        Effect = "Allow"
-        Principal = {
-          AWS = var.allowed_principal_arns
+    Statement = concat(
+      # Acceso desde EC2 (si se especifica)
+      length(var.allowed_principal_arns) > 0 ? [
+        {
+          Sid    = "AllowAccessFromEC2"
+          Effect = "Allow"
+          Principal = {
+            AWS = var.allowed_principal_arns
+          }
+          Action = [
+            "s3:GetObject",
+            "s3:PutObject",
+            "s3:DeleteObject",
+            "s3:ListBucket",
+            "s3:GetBucketLocation"
+          ]
+          Resource = [
+            aws_s3_bucket.app.arn,
+            "${aws_s3_bucket.app.arn}/*"
+          ]
         }
-        Action = [
-          "s3:GetObject",
-          "s3:PutObject",
-          "s3:DeleteObject",
-          "s3:ListBucket",
-          "s3:GetBucketLocation"
-        ]
-        Resource = [
-          aws_s3_bucket.app.arn,
-          "${aws_s3_bucket.app.arn}/*"
-        ]
-      }
-    ]
+      ] : [],
+      # Acceso desde CloudFront OAI (si se especifica)
+      var.cloudfront_oai_iam_arn != "" ? [
+        {
+          Sid    = "AllowCloudFrontAccess"
+          Effect = "Allow"
+          Principal = {
+            AWS = var.cloudfront_oai_iam_arn
+          }
+          Action   = "s3:GetObject"
+          Resource = "${aws_s3_bucket.app.arn}/*"
+        }
+      ] : []
+    )
   })
 }
 

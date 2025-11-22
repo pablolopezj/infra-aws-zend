@@ -32,6 +32,43 @@ module "network" {
   name_prefix = local.name_prefix
 }
 
+# Segunda subnet pública para ALB (requiere al menos 2 AZs diferentes)
+resource "aws_subnet" "public_b" {
+  count = var.enable_alb && var.enable_cloudfront ? 1 : 0
+
+  vpc_id                  = module.network.vpc_id
+  cidr_block              = var.public_subnet_b_cidr
+  availability_zone       = var.public_subnet_b_az
+  map_public_ip_on_launch = true
+
+  tags = merge(
+    local.common_tags,
+    {
+      Name = "${local.name_prefix}-subnet-public-b"
+      Tier = "public"
+    }
+  )
+}
+
+# Data source para obtener la tabla de ruteo pública
+data "aws_route_table" "public" {
+  count = var.enable_alb && var.enable_cloudfront ? 1 : 0
+
+  vpc_id = module.network.vpc_id
+  filter {
+    name   = "tag:Name"
+    values = ["${local.name_prefix}-rt-public"]
+  }
+}
+
+# Asociar segunda subnet pública a la tabla de ruteo pública
+resource "aws_route_table_association" "public_b_assoc" {
+  count = var.enable_alb && var.enable_cloudfront ? 1 : 0
+
+  subnet_id      = aws_subnet.public_b[0].id
+  route_table_id = data.aws_route_table.public[0].id
+}
+
 # IAM Role para EC2 para acceder a S3 (debe crearse antes del módulo compute)
 resource "aws_iam_role" "ec2_s3_access" {
   count = var.enable_ec2_instance && var.enable_s3 && var.create_ec2_s3_role ? 1 : 0
@@ -163,6 +200,12 @@ module "s3" {
   # Permitir acceso desde la instancia EC2 si tiene IAM role
   allowed_principal_arns = var.enable_ec2_instance && var.create_ec2_s3_role ? [aws_iam_role.ec2_s3_access[0].arn] : (var.ec2_iam_role_arn != "" ? [var.ec2_iam_role_arn] : [])
 
+  # Permitir acceso desde CloudFront OAI si CloudFront está habilitado y el origen es S3
+  # Nota: Usamos try() para manejar el caso donde CloudFront aún no existe
+  cloudfront_oai_iam_arn = var.enable_cloudfront && var.cloudfront_origin_s3_bucket != "" && var.enable_s3 ? (
+    try(module.cloudfront[0].origin_access_identity_iam_arn, "")
+  ) : ""
+
   tags = local.common_tags
 }
 
@@ -224,14 +267,17 @@ module "alb" {
   name_prefix = local.name_prefix
 
   vpc_id     = module.network.vpc_id
-  subnet_ids = [module.network.public_subnet_id] # ALB en subnet pública
+  subnet_ids = var.enable_alb && var.enable_cloudfront ? [
+    module.network.public_subnet_id,
+    aws_subnet.public_b[0].id
+  ] : [module.network.public_subnet_id] # ALB requiere al menos 2 subnets en diferentes AZs
 
   target_instance_ids = var.enable_ec2_instance ? [module.compute[0].instance_id] : []
 
   target_port     = 80
   target_protocol = "HTTP"
 
-  certificate_arn = var.alb_certificate_arn != "" ? var.alb_certificate_arn : null
+  certificate_arn = var.alb_certificate_arn != "" ? var.alb_certificate_arn : ""
 
   health_check_path     = "/"
   health_check_protocol = "HTTP"
@@ -278,7 +324,11 @@ module "cloudfront" {
 
   # Origen: ALB, S3, o EC2 directo (solo si está en subnet pública)
   # Prioridad: S3 > ALB > EC2 directo (solo si pública)
-  origin_domain_name = var.cloudfront_origin_s3_bucket != "" ? "${var.cloudfront_origin_s3_bucket}.s3.${var.aws_region}.amazonaws.com" : (
+  origin_type = var.cloudfront_origin_s3_bucket != "" ? "s3" : "custom"
+  
+  origin_domain_name = var.cloudfront_origin_s3_bucket != "" ? (
+    var.enable_s3 ? "${module.s3[0].bucket_regional_domain_name}" : "${var.cloudfront_origin_s3_bucket}.s3.${var.aws_region}.amazonaws.com"
+  ) : (
     var.enable_alb && var.enable_cloudfront ? module.alb[0].alb_dns_name : (
       var.enable_ec2_instance && var.ec2_subnet_tier == "public" ? module.compute[0].instance_public_ip : ""
     )
@@ -290,14 +340,14 @@ module "cloudfront" {
     )
   )
 
-  # Protocolo según el origen
+  # Configuración para custom origin (ALB/EC2) - no aplica para S3
   origin_protocol_policy = var.cloudfront_origin_s3_bucket != "" ? "https-only" : (
     var.enable_alb ? "https-only" : "http-only"
   )
   origin_http_port  = 80
   origin_https_port = 443
 
-  # WAF asociado (NO requiere ALB)
+  # WAF asociado (NO requiere ALB) - CloudFront requiere el ARN completo, no el ID
   waf_web_acl_id = var.enable_waf && var.enable_cloudfront ? module.waf[0].web_acl_arn : ""
 
   # Configuración de caché
@@ -310,4 +360,10 @@ module "cloudfront" {
   use_default_certificate = true # Usar certificado CloudFront por defecto
 
   tags = local.common_tags
+
+  # Dependencia explícita: CloudFront debe esperar a que el WAF se cree
+  # El WAF se crea en us-east-1 y CloudFront puede accederlo desde cualquier región
+  depends_on = [
+    module.waf
+  ]
 }

@@ -92,8 +92,13 @@ variable "deregistration_delay" {
 
 variable "certificate_arn" {
   type        = string
-  description = "ACM certificate ARN for HTTPS listener (empty = no HTTPS)"
+  description = "ACM certificate ARN for HTTPS listener (empty string = no HTTPS)"
   default     = ""
+  
+  validation {
+    condition     = var.certificate_arn == "" || can(regex("^arn:aws:acm:", var.certificate_arn))
+    error_message = "Certificate ARN must be a valid ACM ARN or empty string."
+  }
 }
 
 variable "ssl_policy" {

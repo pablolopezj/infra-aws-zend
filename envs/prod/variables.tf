@@ -107,6 +107,33 @@ variable "private_subnet_az" {
   }
 }
 
+variable "public_subnet_b_cidr" {
+  type        = string
+  description = "CIDR block for the second public subnet (required for ALB)"
+  default     = "10.0.3.0/24"
+
+  validation {
+    condition     = can(cidrhost(var.public_subnet_b_cidr, 0))
+    error_message = "Public subnet B CIDR must be a valid CIDR block (e.g., 10.0.3.0/24)."
+  }
+
+  validation {
+    condition     = tonumber(split("/", var.public_subnet_b_cidr)[1]) >= 16 && tonumber(split("/", var.public_subnet_b_cidr)[1]) <= 28
+    error_message = "Public subnet B CIDR prefix must be between /16 and /28."
+  }
+}
+
+variable "public_subnet_b_az" {
+  type        = string
+  description = "Availability Zone for the second public subnet (must be different from public_subnet_az)"
+  default     = "mx-central-1b"
+
+  validation {
+    condition     = can(regex("^[a-z]+-[a-z]+-[0-9]+[a-z]$", var.public_subnet_b_az))
+    error_message = "Availability Zone must be in the format 'region-zone' (e.g., mx-central-1b)."
+  }
+}
+
 variable "enable_ec2_instance" {
   type        = bool
   description = "Enable EC2 instance creation"

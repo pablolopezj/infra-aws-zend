@@ -10,7 +10,24 @@ variable "name_prefix" {
 
 variable "origin_domain_name" {
   type        = string
-  description = "Domain name of the origin (ALB DNS name or EC2 endpoint)"
+  description = "Domain name of the origin (ALB DNS name, EC2 endpoint, or S3 bucket regional domain)"
+}
+
+variable "origin_type" {
+  type        = string
+  description = "Type of origin: 's3' for S3 bucket, 'custom' for ALB/EC2"
+  default     = "custom"
+
+  validation {
+    condition     = contains(["s3", "custom"], var.origin_type)
+    error_message = "Origin type must be either 's3' or 'custom'."
+  }
+}
+
+variable "s3_origin_access_identity" {
+  type        = string
+  description = "Origin Access Identity (OAI) path for S3 origin (e.g., origin-access-identity/cloudfront/E1234567890ABC). Leave empty to create a new OAI or use existing OAI path"
+  default     = ""
 }
 
 variable "origin_id" {
@@ -76,8 +93,9 @@ variable "enable_compression" {
 }
 
 variable "waf_web_acl_id" {
+  # NOTA: Aunque el parámetro se llama "web_acl_id", CloudFront requiere el ARN completo del WAF Web ACL
   type        = string
-  description = "WAF Web ACL ID to associate with CloudFront"
+  description = "WAF Web ACL ARN to associate with CloudFront (required ARN, not ID, despite parameter name)"
   default     = ""
 }
 

@@ -10,10 +10,14 @@ resource "aws_lb" "app" {
   enable_http2              = var.enable_http2
   enable_cross_zone_load_balancing = true
 
-  access_logs {
-    bucket  = var.access_logs_bucket != "" ? var.access_logs_bucket : null
-    prefix  = var.access_logs_prefix
-    enabled = var.enable_access_logs && var.access_logs_bucket != ""
+  # Access logs solo si están habilitados y se especifica un bucket
+  dynamic "access_logs" {
+    for_each = var.enable_access_logs && var.access_logs_bucket != "" ? [1] : []
+    content {
+      bucket  = var.access_logs_bucket
+      prefix  = var.access_logs_prefix
+      enabled = true
+    }
   }
 
   tags = merge(
@@ -101,26 +105,43 @@ resource "aws_lb_target_group_attachment" "app" {
   port            = var.target_port
 }
 
-# Listener HTTP (redirigir a HTTPS)
+# Listener HTTP
+# Si hay certificado: redirigir a HTTPS
+# Si no hay certificado: forward directamente al target group
 resource "aws_lb_listener" "http" {
   load_balancer_arn = aws_lb.app.arn
   port              = "80"
   protocol          = "HTTP"
 
   default_action {
-    type = "redirect"
+    # Si hay certificado, redirigir a HTTPS; si no, forward directamente
+    type = var.certificate_arn != null && var.certificate_arn != "" ? "redirect" : "forward"
 
-    redirect {
-      port        = "443"
-      protocol    = "HTTPS"
-      status_code = "HTTP_301"
+    # Redirect a HTTPS solo si hay certificado
+    dynamic "redirect" {
+      for_each = var.certificate_arn != null && var.certificate_arn != "" ? [1] : []
+      content {
+        port        = "443"
+        protocol    = "HTTPS"
+        status_code = "HTTP_301"
+      }
+    }
+
+    # Forward al target group si no hay certificado
+    dynamic "forward" {
+      for_each = var.certificate_arn == null || var.certificate_arn == "" ? [1] : []
+      content {
+        target_group {
+          arn = aws_lb_target_group.app.arn
+        }
+      }
     }
   }
 }
 
-# Listener HTTPS
+# Listener HTTPS (solo si se proporciona un certificado válido)
 resource "aws_lb_listener" "https" {
-  count             = var.certificate_arn != "" ? 1 : 0
+  count             = var.certificate_arn != null && var.certificate_arn != "" ? 1 : 0
   load_balancer_arn = aws_lb.app.arn
   port              = "443"
   protocol          = "HTTPS"

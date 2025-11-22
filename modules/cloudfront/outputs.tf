@@ -23,3 +23,13 @@ output "distribution_status" {
   description = "Current status of the distribution"
 }
 
+output "origin_access_identity_iam_arn" {
+  value       = var.origin_type == "s3" && var.s3_origin_access_identity == "" ? aws_cloudfront_origin_access_identity.s3_oai[0].iam_arn : null
+  description = "IAM ARN of the Origin Access Identity (for S3 bucket policy)"
+}
+
+output "origin_access_identity_path" {
+  value       = var.origin_type == "s3" && var.s3_origin_access_identity == "" ? aws_cloudfront_origin_access_identity.s3_oai[0].cloudfront_access_identity_path : null
+  description = "Path of the Origin Access Identity (for S3 bucket policy)"
+}
+
