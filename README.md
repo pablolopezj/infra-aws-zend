@@ -16,16 +16,19 @@ Infraestructura como código (IaC) para desplegar recursos de red en AWS usando 
 
 Este proyecto gestiona la infraestructura completa para la aplicación Zend en AWS, incluyendo:
 
-- **VPC** con subredes públicas y privadas
+- **VPC** con subredes públicas y privadas (múltiples AZs para ALB)
 - **Internet Gateway** para conectividad pública
 - **Tablas de ruteo** para subredes públicas y privadas
 - **Security Groups y Network ACLs** para seguridad de red
 - **VPC Endpoints** (S3 y DynamoDB) para minimizar tráfico externo
 - **Bastion Host** para acceso seguro a instancias privadas
-- **Instancias EC2** con configuración personalizada
+- **Instancias EC2** con configuración personalizada (volúmenes de 30GB)
 - **Volúmenes EBS** con snapshots automáticos
 - **Key Pairs** para acceso SSH seguro
-- **S3 Bucket** para almacenamiento de la aplicación con lifecycle policies
+- **S3 Bucket** para almacenamiento de la aplicación con lifecycle policies y OAI para CloudFront
+- **ALB (Application Load Balancer)** con soporte para HTTP/HTTPS condicional
+- **CloudFront** con soporte para orígenes S3 y ALB/EC2, y OAI para acceso seguro a S3
+- **WAF (Web Application Firewall)** asociado a CloudFront para protección contra ataques
 - **RDS PostgreSQL** (opcional, comentado por defecto)
 - **Backend remoto** (S3 + DynamoDB) para gestión segura del estado de Terraform
 
@@ -65,6 +68,19 @@ infra-aws-zend/
     │   ├── main.tf
     │   ├── variables.tf
     │   └── outputs.tf
+    ├── alb/                 # Módulo para Application Load Balancer
+    │   ├── main.tf
+    │   ├── variables.tf
+    │   └── outputs.tf
+    ├── cloudfront/          # Módulo para CloudFront Distribution
+    │   ├── main.tf
+    │   ├── variables.tf
+    │   └── outputs.tf
+    ├── waf/                 # Módulo para Web Application Firewall
+    │   ├── main.tf
+    │   ├── variables.tf
+    │   ├── outputs.tf
+    │   └── versions.tf
     ├── rds/                 # Módulo para RDS PostgreSQL (opcional)
     │   ├── main.tf
     │   ├── variables.tf
@@ -162,6 +178,7 @@ Una vez que el backend está creado, puedes usar el entorno de producción:
    Esto creará:
    - VPC con CIDR `10.0.0.0/16`
    - Subred pública en `mx-central-1a` con CIDR `10.0.1.0/24`
+   - Segunda subred pública en `mx-central-1b` con CIDR `10.0.3.0/24` (para ALB)
    - Subred privada en `mx-central-1b` con CIDR `10.0.2.0/24`
    - Internet Gateway
    - Tablas de ruteo para subredes públicas y privadas
@@ -169,10 +186,13 @@ Una vez que el backend está creado, puedes usar el entorno de producción:
    - Network ACLs (público y privado)
    - VPC Endpoints para S3 y DynamoDB
    - Instancia EC2 (t4g.medium) con Amazon Linux 2023 en subnet privada
-   - Volumen EBS (100 GB gp3) con snapshots automáticos (1 vez al día)
-   - Bastion Host (t4g.micro) en subnet pública para acceso seguro
-   - S3 Bucket para almacenamiento de la aplicación con lifecycle policies
+   - Volumen root EBS (30 GB gp3) y volumen de datos (100 GB gp3) con snapshots automáticos
+   - Bastion Host (t4g.micro) con volumen root de 30 GB en subnet pública
+   - S3 Bucket para almacenamiento de la aplicación con lifecycle policies y OAI para CloudFront
    - IAM Role y Policy para acceso a S3 desde EC2
+   - ALB (Application Load Balancer) en subredes públicas (2 AZs) con listeners HTTP/HTTPS condicionales
+   - CloudFront Distribution con soporte para orígenes S3 (con OAI) o ALB/EC2
+   - WAF (Web Application Firewall) en us-east-1 asociado a CloudFront
    - Key Pair para acceso SSH (si está configurado)
    - RDS PostgreSQL (opcional, comentado por defecto)
 
@@ -183,44 +203,77 @@ Una vez que el backend está creado, puedes usar el entorno de producción:
 
 ## 🏗️ Arquitectura
 
-### Recursos de Red Creados
+### Arquitectura de Red y Aplicación
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                         VPC                                  │
-│                    (10.0.0.0/16)                            │
-│                                                              │
-│  ┌──────────────────────┐    ┌──────────────────────┐      │
-│  │   Subred Pública     │    │   Subred Privada     │      │
-│  │   (10.0.1.0/24)      │    │   (10.0.2.0/24)      │      │
-│  │   mx-central-1a      │    │   mx-central-1b       │      │
-│  │                      │    │                      │      │
-│  │  ┌──────────────┐    │    │  ┌──────────────┐    │      │
-│  │  │ Bastion Host │    │    │  │ EC2 Instance │    │      │
-│  │  │ (t4g.micro)  │    │    │  │ (t4g.medium) │    │      │
-│  │  │              │    │    │  │ + EBS 100GB │    │      │
-│  │  └──────────────┘    │    │  └──────────────┘    │      │
-│  │                      │    │                      │      │
-│  │  Security Group      │    │  Security Group      │      │
-│  │  (Público)           │    │  (Privado)           │      │
-│  │                      │    │                      │      │
-│  │  Network ACL         │    │  Network ACL         │      │
-│  │  (Público)           │    │  (Privado)           │      │
-│  │                      │    │                      │      │
-│  │  Route Table         │    │  Route Table         │      │
-│  │  (Pública)           │    │  (Privada)           │      │
-│  └──────────┬───────────┘    └──────────┬───────────┘      │
-│             │                           │                  │
-│             │        SSH via Bastion    │                  │
-│             └───────────────────────────┘                  │
-└─────────────┼───────────────────────────┼──────────────────┘
-              │                           │
-              │                           │
-              ▼                           ▼
-    ┌─────────────────┐         ┌──────────────────┐
-    │ Internet        │         │ VPC Endpoints    │
-    │ Gateway         │         │ (S3, DynamoDB)   │
-    └─────────────────┘         └──────────────────┘
+┌─────────────────────────────────────────────────────────────────────┐
+│                         Internet                                    │
+│                                                                     │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │                    CloudFront + WAF                          │  │
+│  │              (Global CDN + Web Application Firewall)         │  │
+│  └───────────────────────────┬──────────────────────────────────┘  │
+│                              │                                       │
+│                              ▼                                       │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │                    Application Load Balancer                 │  │
+│  │                    (HTTP/HTTPS condicional)                  │  │
+│  └───────────────────────────┬──────────────────────────────────┘  │
+│                              │                                       │
+└──────────────────────────────┼───────────────────────────────────────┘
+                                │
+                ┌───────────────┼───────────────┐
+                │               │               │
+                ▼               ▼               ▼
+┌─────────────────────────────────────────────────────────────────────┐
+│                         VPC                                        │
+│                    (10.0.0.0/16)                                  │
+│                                                                    │
+│  ┌──────────────────────┐  ┌──────────────────────┐              │
+│  │   Subred Pública A   │  │   Subred Pública B   │              │
+│  │   (10.0.1.0/24)      │  │   (10.0.3.0/24)      │              │
+│  │   mx-central-1a      │  │   mx-central-1b      │              │
+│  │                      │  │                      │              │
+│  │  ┌──────────────┐    │  │                      │              │
+│  │  │ Bastion Host │    │  │                      │              │
+│  │  │ (t4g.micro)  │    │  │                      │              │
+│  │  │ 30GB root    │    │  │                      │              │
+│  │  └──────────────┘    │  │                      │              │
+│  │                      │  │                      │              │
+│  │  ┌──────────────┐    │  │  ┌──────────────┐    │              │
+│  │  │     ALB      │    │  │  │     ALB      │    │              │
+│  │  │  (Subnet A)  │    │  │  │  (Subnet B)  │    │              │
+│  │  └──────────────┘    │  │  └──────────────┘    │              │
+│  └──────────────────────┘  └──────────────────────┘              │
+│                                                                    │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │                    Subred Privada                            │  │
+│  │                    (10.0.2.0/24)                             │  │
+│  │                    mx-central-1b                             │  │
+│  │                                                              │  │
+│  │  ┌──────────────┐                                           │  │
+│  │  │ EC2 Instance │                                           │  │
+│  │  │ (t4g.medium) │                                           │  │
+│  │  │ 30GB root    │                                           │  │
+│  │  │ + EBS 100GB  │                                           │  │
+│  │  └──────────────┘                                           │  │
+│  │                                                              │  │
+│  │  ┌──────────────┐                                           │  │
+│  │  │ S3 Bucket    │  ← CloudFront OAI (acceso seguro)        │  │
+│  │  │ (app-data)   │                                           │  │
+│  │  └──────────────┘                                           │  │
+│  └──────────────────────────────────────────────────────────────┘  │
+│                                                                    │
+│  ┌──────────────────────────────────────────────────────────────┐  │
+│  │                    VPC Endpoints                              │  │
+│  │                    (S3, DynamoDB)                            │  │
+│  └──────────────────────────────────────────────────────────────┘  │
+└───────────────────────────────┬───────────────────────────────────┘
+                                │
+                                ▼
+                    ┌───────────────────┐
+                    │ Internet Gateway  │
+                    └───────────────────┘
 ```
 
 ### Backend de Terraform
@@ -335,7 +388,51 @@ Una vez que el backend está creado, puedes usar el entorno de producción:
 | `noncurrent_version_transition_to_glacier_ir_days` | Días antes de transicionar versiones no actuales a Glacier IR | No (default: `7`) |
 | `noncurrent_version_expiration_days` | Días antes de expirar versiones antiguas (0=deshabilitado) | No (default: `90`) |
 | `allowed_principal_arns` | ARNs de IAM permitidos para acceder al bucket | No (default: `[]`) |
+| `cloudfront_oai_iam_arn` | ARN IAM del OAI de CloudFront para acceso seguro | No (default: `""`) |
 | `tags` | Tags comunes para todos los recursos | No |
+
+### Módulo ALB (`modules/alb/variables.tf`)
+
+| Variable | Descripción | Requerido |
+|----------|-------------|-----------|
+| `name_prefix` | Prefijo para nombres de recursos | Sí |
+| `vpc_id` | ID de la VPC | Sí |
+| `subnet_ids` | Lista de IDs de subredes (mínimo 2 en diferentes AZs) | Sí |
+| `target_instance_ids` | Lista de IDs de instancias EC2 | No (default: `[]`) |
+| `target_port` | Puerto del target | No (default: `80`) |
+| `target_protocol` | Protocolo del target (HTTP/HTTPS) | No (default: `HTTP`) |
+| `certificate_arn` | ARN del certificado ACM para HTTPS (vacío = solo HTTP) | No (default: `""`) |
+| `enable_deletion_protection` | Habilitar protección contra eliminación | No (default: `false`) |
+| `tags` | Tags comunes para todos los recursos | No |
+
+**Nota**: El listener HTTP redirige a HTTPS solo si hay certificado; de lo contrario, hace forward directo al target group.
+
+### Módulo CloudFront (`modules/cloudfront/variables.tf`)
+
+| Variable | Descripción | Requerido |
+|----------|-------------|-----------|
+| `name_prefix` | Prefijo para nombres de recursos | Sí |
+| `origin_domain_name` | Dominio del origen (ALB, EC2, o S3) | Sí |
+| `origin_type` | Tipo de origen: `s3` o `custom` | No (default: `custom`) |
+| `origin_id` | ID del origen | Sí |
+| `waf_web_acl_id` | ARN del WAF Web ACL (requiere ARN completo, no ID) | No (default: `""`) |
+| `price_class` | Clase de precio de CloudFront | No (default: `PriceClass_100`) |
+| `viewer_protocol_policy` | Política de protocolo del viewer | No (default: `redirect-to-https`) |
+| `use_default_certificate` | Usar certificado por defecto de CloudFront | No (default: `true`) |
+| `tags` | Tags comunes para todos los recursos | No |
+
+**Nota**: CloudFront puede usar orígenes S3 (con OAI para acceso seguro) o ALB/EC2. El WAF debe estar en `us-east-1` y requiere el ARN completo.
+
+### Módulo WAF (`modules/waf/variables.tf`)
+
+| Variable | Descripción | Requerido |
+|----------|-------------|-----------|
+| `name_prefix` | Prefijo para nombres de recursos | Sí |
+| `enable_rate_limiting` | Habilitar rate limiting | No (default: `false`) |
+| `rate_limit` | Límite de requests por 5 minutos | No (default: `2000`) |
+| `tags` | Tags comunes para todos los recursos | No |
+
+**Nota**: El WAF para CloudFront DEBE crearse en `us-east-1` (configurado automáticamente con provider alias).
 
 ## 📝 Comandos Comunes
 
@@ -391,6 +488,19 @@ terraform output ec2_instance_private_ip
 terraform output s3_bucket_id
 terraform output s3_bucket_arn
 terraform output ec2_s3_role_arn
+
+# Ver información de ALB
+terraform output alb_dns_name
+terraform output alb_target_group_arn
+
+# Ver información de CloudFront
+terraform output cloudfront_distribution_id
+terraform output cloudfront_distribution_domain_name
+terraform output cloudfront_distribution_arn
+
+# Ver información de WAF
+terraform output waf_web_acl_id
+terraform output waf_web_acl_arn
 
 # Destruir infraestructura (¡cuidado!)
 terraform destroy
@@ -512,12 +622,16 @@ aws s3api get-bucket-lifecycle-configuration --bucket $BUCKET_NAME
    - VPC y Networking: Gratis
    - EC2 (t4g.medium): ~$30-40 USD/mes (depende de Savings Plans)
    - Bastion (t4g.micro): ~$7-10 USD/mes
-   - EBS (100 GB gp3): ~$8 USD/mes
+   - EBS (30GB root + 100GB data gp3): ~$10.40 USD/mes
    - Snapshots: ~$0.75-1.50 USD/mes
    - S3 Standard (200 GB): ~$4.60 USD/mes
    - S3 Glacier IR (800 GB): ~$4.00 USD/mes
    - S3 Requests y transiciones: ~$0.25 USD/mes
-   - **Total estimado**: ~$55-70 USD/mes
+   - ALB (si habilitado): ~$16-22 USD/mes + LCU
+   - CloudFront (50 GB salida, 1M requests): ~$4.50 USD/mes
+   - WAF (1 Web ACL, 3 reglas, 1 managed rule group): ~$5-10 USD/mes
+   - **Total estimado (sin ALB/CloudFront/WAF)**: ~$57-72 USD/mes
+   - **Total estimado (con ALB/CloudFront/WAF)**: ~$82-106 USD/mes
 
 7. **Seguridad**: 
    - El bucket S3 tiene acceso público bloqueado y encriptación habilitada
@@ -525,10 +639,13 @@ aws s3api get-bucket-lifecycle-configuration --bucket $BUCKET_NAME
    - Network ACL público permite SSH (puerto 22) para acceso al bastion
    - Security Group privado permite SSH desde subnet pública (bastion access)
    - VPC Endpoints minimizan tráfico externo
-   - Volúmenes EBS encriptados por defecto
+   - Volúmenes EBS encriptados por defecto (30GB root para Bastion y EC2)
    - Instancias privadas solo accesibles a través del bastion host
-   - S3 bucket con encriptación AES256 y acceso restringido a IAM roles
+   - S3 bucket con encriptación AES256 y acceso restringido a IAM roles y CloudFront OAI
    - IAM Role y Policy creados automáticamente para acceso desde EC2
+   - CloudFront con OAI (Origin Access Identity) para acceso seguro a S3
+   - WAF con reglas administradas de AWS (Common Rule Set, Known Bad Inputs)
+   - ALB con listeners HTTP/HTTPS condicionales (solo redirige a HTTPS si hay certificado)
    - **Recomendación**: Restringir `bastion_allowed_ssh_cidrs` a tu IP específica en producción
 
 ## 🔄 Próximos Pasos
@@ -543,12 +660,17 @@ Mejoras recomendadas para el futuro:
 - [x] Crear Bastion Host para acceso seguro ✅
 - [x] Crear módulo S3 para almacenamiento de aplicación ✅
 - [x] Implementar lifecycle policies para optimización de costos ✅
+- [x] Crear módulo de Load Balancer (ALB) ✅
+- [x] Crear módulo de CloudFront con soporte S3 y OAI ✅
+- [x] Crear módulo de WAF asociado a CloudFront ✅
+- [x] Implementar segunda subnet pública para ALB (2 AZs) ✅
+- [x] Configurar acceso seguro S3 con CloudFront OAI ✅
 - [ ] Agregar NAT Gateway para conectividad saliente de la subred privada
-- [ ] Crear múltiples subredes por AZ para alta disponibilidad
-- [ ] Agregar módulo de bases de datos (RDS)
-- [ ] Agregar módulo de Load Balancer (ALB)
+- [ ] Crear múltiples subredes privadas por AZ para alta disponibilidad
+- [ ] Agregar módulo de bases de datos (RDS) - código listo, descomentar para usar
 - [ ] Implementar Auto Scaling Groups
 - [ ] Agregar CloudWatch Alarms y Logs
+- [ ] Configurar certificados ACM para HTTPS en ALB
 
 ## 📚 Documentación Adicional
 
@@ -576,5 +698,5 @@ El proyecto incluye varios scripts para facilitar el trabajo:
 
 ---
 
-**Última actualización**: 2024
+**Última actualización**: 2025-11-22
 

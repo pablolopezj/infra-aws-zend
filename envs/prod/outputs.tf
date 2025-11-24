@@ -170,6 +170,11 @@ output "alb_target_group_arn" {
   description = "ARN of the ALB target group"
 }
 
+output "alb_security_group_id" {
+  value       = var.enable_alb && var.enable_cloudfront ? module.alb[0].security_group_id : null
+  description = "Security group ID of the ALB"
+}
+
 # ============================================================================
 # Outputs de WAF
 # ============================================================================

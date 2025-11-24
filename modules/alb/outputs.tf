@@ -28,3 +28,8 @@ output "security_group_id" {
   description = "Security group ID for ALB"
 }
 
+output "alb_security_group_id" {
+  value       = aws_security_group.alb.id
+  description = "Security group ID for ALB (alias for compatibility)"
+}
+

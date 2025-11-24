@@ -288,6 +288,38 @@ module "alb" {
   tags = local.common_tags
 }
 
+# Permitir tráfico HTTP desde ALB a instancias EC2 en subnet privada
+# Esta regla es necesaria para que el ALB pueda comunicarse con las instancias EC2
+# cuando están en una subnet privada
+resource "aws_security_group_rule" "alb_to_ec2_http" {
+  count = var.enable_alb && var.enable_cloudfront && var.enable_ec2_instance && var.ec2_subnet_tier == "private" ? 1 : 0
+
+  type                     = "ingress"
+  from_port                = 80
+  to_port                  = 80
+  protocol                 = "tcp"
+  source_security_group_id = module.alb[0].security_group_id
+  security_group_id        = module.network.private_security_group_id
+  description              = "Allow HTTP traffic from ALB to EC2 instances in private subnet"
+
+  depends_on = [module.alb]
+}
+
+# Permitir tráfico HTTPS desde ALB a instancias EC2 en subnet privada (opcional)
+resource "aws_security_group_rule" "alb_to_ec2_https" {
+  count = var.enable_alb && var.enable_cloudfront && var.enable_ec2_instance && var.ec2_subnet_tier == "private" ? 1 : 0
+
+  type                     = "ingress"
+  from_port                = 443
+  to_port                  = 443
+  protocol                 = "tcp"
+  source_security_group_id = module.alb[0].security_group_id
+  security_group_id        = module.network.private_security_group_id
+  description              = "Allow HTTPS traffic from ALB to EC2 instances in private subnet"
+
+  depends_on = [module.alb]
+}
+
 # ============================================================================
 # Módulo de WAF (Web Application Firewall)
 # ============================================================================
