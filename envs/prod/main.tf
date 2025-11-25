@@ -210,6 +210,26 @@ module "s3" {
 }
 
 # ============================================================================
+# Módulo de ECR (Elastic Container Registry)
+# ============================================================================
+module "ecr" {
+  count  = var.enable_ecr ? 1 : 0
+  source = "../../modules/ecr"
+
+  repository_name = var.ecr_repository_name != "" ? var.ecr_repository_name : "${local.name_prefix}-app"
+
+  image_tag_mutability     = var.ecr_image_tag_mutability
+  scan_on_push             = var.ecr_scan_on_push
+  encryption_type          = var.ecr_encryption_type
+  kms_key_id               = var.ecr_kms_key_id
+  enable_lifecycle_policy  = var.ecr_enable_lifecycle_policy
+  max_image_count          = var.ecr_max_image_count
+  max_image_age_days       = var.ecr_max_image_age_days
+
+  tags = local.common_tags
+}
+
+# ============================================================================
 # Módulo de RDS PostgreSQL
 # ============================================================================
 # NOTA: Este módulo está comentado temporalmente. Para activarlo:

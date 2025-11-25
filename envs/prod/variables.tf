@@ -475,3 +475,71 @@ variable "cloudfront_origin_s3_bucket" {
   description = "S3 bucket name to use as CloudFront origin (empty = use ALB or EC2). If set, CloudFront will point to S3 instead of ALB/EC2."
   default     = ""
 }
+
+# ============================================================================
+# Variables para ECR (Elastic Container Registry)
+# ============================================================================
+
+variable "enable_ecr" {
+  type        = bool
+  description = "Enable ECR repository for Docker images"
+  default     = false
+}
+
+variable "ecr_repository_name" {
+  type        = string
+  description = "Name of the ECR repository. If empty, will use: {project_name}-{environment}-{short_region}-app"
+  default     = ""
+}
+
+variable "ecr_image_tag_mutability" {
+  type        = string
+  description = "The tag mutability setting for the repository. Must be one of: MUTABLE or IMMUTABLE"
+  default     = "MUTABLE"
+
+  validation {
+    condition     = contains(["MUTABLE", "IMMUTABLE"], var.ecr_image_tag_mutability)
+    error_message = "ecr_image_tag_mutability must be either MUTABLE or IMMUTABLE."
+  }
+}
+
+variable "ecr_scan_on_push" {
+  type        = bool
+  description = "Indicates whether images are scanned after being pushed to the repository"
+  default     = true
+}
+
+variable "ecr_encryption_type" {
+  type        = string
+  description = "The encryption type to use for the repository. Valid values are AES256 or KMS"
+  default     = "AES256"
+
+  validation {
+    condition     = contains(["AES256", "KMS"], var.ecr_encryption_type)
+    error_message = "ecr_encryption_type must be either AES256 or KMS."
+  }
+}
+
+variable "ecr_kms_key_id" {
+  type        = string
+  description = "The KMS key to use when encryption_type is KMS. If not specified, uses the default AWS managed key for ECR"
+  default     = ""
+}
+
+variable "ecr_enable_lifecycle_policy" {
+  type        = bool
+  description = "Enable lifecycle policy to automatically clean up old images"
+  default     = true
+}
+
+variable "ecr_max_image_count" {
+  type        = number
+  description = "Maximum number of images to keep in the repository"
+  default     = 10
+}
+
+variable "ecr_max_image_age_days" {
+  type        = number
+  description = "Maximum age in days for untagged images before they are expired"
+  default     = 30
+}

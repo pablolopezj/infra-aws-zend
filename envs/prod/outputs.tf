@@ -205,3 +205,26 @@ output "cloudfront_distribution_arn" {
   value       = var.enable_cloudfront ? module.cloudfront[0].distribution_arn : null
   description = "CloudFront distribution ARN"
 }
+
+# ============================================================================
+# Outputs de ECR
+# ============================================================================
+output "ecr_repository_url" {
+  value       = var.enable_ecr ? module.ecr[0].repository_url : null
+  description = "URL of the ECR repository (use this to push/pull Docker images)"
+}
+
+output "ecr_repository_name" {
+  value       = var.enable_ecr ? module.ecr[0].repository_name : null
+  description = "Name of the ECR repository"
+}
+
+output "ecr_repository_arn" {
+  value       = var.enable_ecr ? module.ecr[0].repository_arn : null
+  description = "ARN of the ECR repository"
+}
+
+output "ecr_registry_id" {
+  value       = var.enable_ecr ? module.ecr[0].registry_id : null
+  description = "Registry ID where the repository was created"
+}
