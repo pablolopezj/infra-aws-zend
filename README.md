@@ -26,6 +26,7 @@ Este proyecto gestiona la infraestructura completa para la aplicación Zend en A
 - **Volúmenes EBS** con snapshots automáticos
 - **Key Pairs** para acceso SSH seguro
 - **S3 Bucket** para almacenamiento de la aplicación con lifecycle policies y OAI para CloudFront
+- **ECR (Elastic Container Registry)** para almacenar imágenes Docker con lifecycle policies y escaneo de seguridad
 - **ALB (Application Load Balancer)** con soporte para HTTP/HTTPS condicional
 - **CloudFront** con soporte para orígenes S3 y ALB/EC2, y OAI para acceso seguro a S3
 - **WAF (Web Application Firewall)** asociado a CloudFront para protección contra ataques
@@ -65,6 +66,10 @@ infra-aws-zend/
     │   ├── variables.tf
     │   └── outputs.tf
     ├── s3/                  # Módulo para S3 Bucket de aplicación
+    │   ├── main.tf
+    │   ├── variables.tf
+    │   └── outputs.tf
+    ├── ecr/                 # Módulo para ECR (Elastic Container Registry)
     │   ├── main.tf
     │   ├── variables.tf
     │   └── outputs.tf
@@ -190,6 +195,7 @@ Una vez que el backend está creado, puedes usar el entorno de producción:
    - Bastion Host (t4g.micro) con volumen root de 30 GB en subnet pública
    - S3 Bucket para almacenamiento de la aplicación con lifecycle policies y OAI para CloudFront
    - IAM Role y Policy para acceso a S3 desde EC2
+   - ECR Repository para almacenar imágenes Docker con lifecycle policies y escaneo de seguridad
    - ALB (Application Load Balancer) en subredes públicas (2 AZs) con listeners HTTP/HTTPS condicionales
    - CloudFront Distribution con soporte para orígenes S3 (con OAI) o ALB/EC2
    - WAF (Web Application Firewall) en us-east-1 asociado a CloudFront
@@ -321,6 +327,15 @@ Una vez que el backend está creado, puedes usar el entorno de producción:
 | `s3_transition_to_glacier_ir_days` | Días antes de transición a Glacier IR | `30` |
 | `s3_noncurrent_version_expiration_days` | Días antes de expirar versiones antiguas | `90` |
 | `create_ec2_s3_role` | Crear IAM role para EC2 acceder a S3 | `true` |
+| `enable_ecr` | Habilitar creación de repositorio ECR | `false` |
+| `ecr_repository_name` | Nombre del repositorio ECR (vacío = auto-generado) | `""` |
+| `ecr_image_tag_mutability` | Mutabilidad de tags: `MUTABLE` o `IMMUTABLE` | `MUTABLE` |
+| `ecr_scan_on_push` | Escanear imágenes automáticamente al hacer push | `true` |
+| `ecr_encryption_type` | Tipo de encriptación: `AES256` o `KMS` | `AES256` |
+| `ecr_kms_key_id` | ID de clave KMS (si encryption_type es KMS) | `""` |
+| `ecr_enable_lifecycle_policy` | Habilitar política de ciclo de vida | `true` |
+| `ecr_max_image_count` | Número máximo de imágenes a mantener | `10` |
+| `ecr_max_image_age_days` | Días máximos antes de expirar imágenes sin etiqueta | `30` |
 
 ### Módulo Network (`modules/network/variables.tf`)
 
@@ -390,6 +405,23 @@ Una vez que el backend está creado, puedes usar el entorno de producción:
 | `allowed_principal_arns` | ARNs de IAM permitidos para acceder al bucket | No (default: `[]`) |
 | `cloudfront_oai_iam_arn` | ARN IAM del OAI de CloudFront para acceso seguro | No (default: `""`) |
 | `tags` | Tags comunes para todos los recursos | No |
+
+### Módulo ECR (`modules/ecr/variables.tf`)
+
+| Variable | Descripción | Requerido |
+|----------|-------------|-----------|
+| `repository_name` | Nombre del repositorio ECR | Sí |
+| `image_tag_mutability` | Mutabilidad de tags: `MUTABLE` o `IMMUTABLE` | No (default: `MUTABLE`) |
+| `scan_on_push` | Escanear imágenes automáticamente al hacer push | No (default: `true`) |
+| `encryption_type` | Tipo de encriptación: `AES256` o `KMS` | No (default: `AES256`) |
+| `kms_key_id` | ID de clave KMS (si encryption_type es KMS) | No (default: `""`) |
+| `enable_lifecycle_policy` | Habilitar política de ciclo de vida para limpiar imágenes antiguas | No (default: `true`) |
+| `max_image_count` | Número máximo de imágenes a mantener | No (default: `10`) |
+| `max_image_age_days` | Días máximos antes de expirar imágenes sin etiqueta | No (default: `30`) |
+| `repository_policy` | Política JSON para el repositorio (opcional) | No (default: `""`) |
+| `tags` | Tags comunes para todos los recursos | No |
+
+**Nota**: La política de ciclo de vida de ECR mantiene automáticamente las últimas N imágenes y expira imágenes sin etiqueta después de X días. Las reglas con `tagStatus=ANY` deben tener la prioridad más baja.
 
 ### Módulo ALB (`modules/alb/variables.tf`)
 
@@ -502,6 +534,12 @@ terraform output cloudfront_distribution_arn
 terraform output waf_web_acl_id
 terraform output waf_web_acl_arn
 
+# Ver información de ECR
+terraform output ecr_repository_url
+terraform output ecr_repository_name
+terraform output ecr_repository_arn
+terraform output ecr_registry_id
+
 # Destruir infraestructura (¡cuidado!)
 terraform destroy
 ```
@@ -605,6 +643,41 @@ aws s3api get-bucket-lifecycle-configuration --bucket $BUCKET_NAME
 
 **Nota**: El bucket S3 se crea con el nombre: `zend-app-prod-mxc1-app-data` (o el especificado en `s3_bucket_name`).
 
+#### Usar ECR para Push/Pull de Imágenes Docker
+
+El repositorio ECR permite almacenar y gestionar imágenes Docker de forma segura:
+
+```bash
+# Obtener información del repositorio
+cd envs/prod
+ECR_REPO_URL=$(terraform output -raw ecr_repository_url)
+ECR_REGISTRY_ID=$(terraform output -raw ecr_registry_id)
+
+# Autenticarse en ECR
+aws ecr get-login-password --region mx-central-1 | docker login --username AWS --password-stdin $ECR_REPO_URL
+
+# O construir y hacer push usando el script incluido
+./build_and_push.sh
+
+# O manualmente:
+# 1. Construir la imagen
+docker build -t zend-app:latest .
+
+# 2. Etiquetar la imagen para ECR
+docker tag zend-app:latest $ECR_REPO_URL:latest
+
+# 3. Hacer push
+docker push $ECR_REPO_URL:latest
+
+# Listar imágenes en el repositorio
+aws ecr list-images --repository-name $(terraform output -raw ecr_repository_name) --region mx-central-1
+
+# Ver detalles de una imagen
+aws ecr describe-images --repository-name $(terraform output -raw ecr_repository_name) --image-ids imageTag=latest --region mx-central-1
+```
+
+**Nota**: Consulta `USO_ECR.md` para una guía completa sobre el uso de ECR, incluyendo autenticación, build y push de imágenes, y gestión de lifecycle policies.
+
 ## ⚠️ Notas Importantes
 
 1. **Orden de ejecución**: Siempre ejecuta `bootstrap` antes de `prod` la primera vez.
@@ -630,8 +703,9 @@ aws s3api get-bucket-lifecycle-configuration --bucket $BUCKET_NAME
    - ALB (si habilitado): ~$16-22 USD/mes + LCU
    - CloudFront (50 GB salida, 1M requests): ~$4.50 USD/mes
    - WAF (1 Web ACL, 3 reglas, 1 managed rule group): ~$5-10 USD/mes
-   - **Total estimado (sin ALB/CloudFront/WAF)**: ~$57-72 USD/mes
-   - **Total estimado (con ALB/CloudFront/WAF)**: ~$82-106 USD/mes
+   - ECR (almacenamiento de imágenes Docker, ~10 GB): ~$1 USD/mes
+   - **Total estimado (sin ALB/CloudFront/WAF/ECR)**: ~$57-72 USD/mes
+   - **Total estimado (con ALB/CloudFront/WAF/ECR)**: ~$83-107 USD/mes
 
 7. **Seguridad**: 
    - El bucket S3 tiene acceso público bloqueado y encriptación habilitada
@@ -646,6 +720,7 @@ aws s3api get-bucket-lifecycle-configuration --bucket $BUCKET_NAME
    - CloudFront con OAI (Origin Access Identity) para acceso seguro a S3
    - WAF con reglas administradas de AWS (Common Rule Set, Known Bad Inputs)
    - ALB con listeners HTTP/HTTPS condicionales (solo redirige a HTTPS si hay certificado)
+   - ECR con encriptación, escaneo de seguridad automático y lifecycle policies para gestión de imágenes
    - **Recomendación**: Restringir `bastion_allowed_ssh_cidrs` a tu IP específica en producción
 
 ## 🔄 Próximos Pasos
@@ -665,6 +740,7 @@ Mejoras recomendadas para el futuro:
 - [x] Crear módulo de WAF asociado a CloudFront ✅
 - [x] Implementar segunda subnet pública para ALB (2 AZs) ✅
 - [x] Configurar acceso seguro S3 con CloudFront OAI ✅
+- [x] Crear módulo de ECR para almacenamiento de imágenes Docker ✅
 - [ ] Agregar NAT Gateway para conectividad saliente de la subred privada
 - [ ] Crear múltiples subredes privadas por AZ para alta disponibilidad
 - [ ] Agregar módulo de bases de datos (RDS) - código listo, descomentar para usar
@@ -680,6 +756,7 @@ Mejoras recomendadas para el futuro:
 - **[SOLUCION_LOCK.md](SOLUCION_LOCK.md)**: Solución de problemas con State Locks
 - **[USO_BASTION.md](USO_BASTION.md)**: Guía completa para usar el Bastion Host
 - **[TROUBLESHOOTING_SSH.md](TROUBLESHOOTING_SSH.md)**: Solución de problemas de conexión SSH
+- **[USO_ECR.md](USO_ECR.md)**: Guía completa para usar ECR (autenticación, build, push y gestión de imágenes)
 
 ## 🛠️ Scripts Útiles
 
@@ -698,5 +775,5 @@ El proyecto incluye varios scripts para facilitar el trabajo:
 
 ---
 
-**Última actualización**: 2025-11-22
+**Última actualización**: 2025-01-27
 

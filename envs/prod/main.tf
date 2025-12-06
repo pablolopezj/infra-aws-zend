@@ -163,6 +163,13 @@ resource "aws_iam_role_policy" "ec2_s3_access" {
   })
 }
 
+# Attach managed policy para acceso de solo lectura a ECR
+resource "aws_iam_role_policy_attachment" "ec2_ecr_readonly" {
+  count      = var.enable_ec2_instance && var.create_ec2_s3_role ? 1 : 0
+  role       = aws_iam_role.ec2_s3_access[0].name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
+}
+
 # Bastion Host
 module "bastion" {
   count  = var.enable_bastion ? 1 : 0
