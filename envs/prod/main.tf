@@ -297,7 +297,11 @@ module "rds" {
   parameter_group_family = var.rds_parameter_group_family
 
   # Permitir acceso desde la instancia EC2 privada
-  allowed_security_group_ids = var.enable_ec2_instance && var.ec2_subnet_tier == "private" ? [module.network.private_security_group_id] : []
+  # Permitir acceso desde la instancia EC2 privada y desde el Bastion (para túneles)
+  allowed_security_group_ids = compact([
+    var.enable_ec2_instance && var.ec2_subnet_tier == "private" ? module.network.private_security_group_id : "",
+    var.enable_bastion ? module.bastion[0].bastion_security_group_id : ""
+  ])
 
   backup_retention_days = var.rds_backup_retention_days
   backup_window         = var.rds_backup_window
