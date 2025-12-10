@@ -192,30 +192,16 @@ resource "aws_security_group" "private" {
   description = "Security group for private subnet resources"
   vpc_id      = aws_vpc.this.id
 
-  # Permitir tráfico desde la subred pública
-  ingress {
-    description     = "Allow traffic from public subnet"
-    from_port       = 0
-    to_port         = 65535
-    protocol        = "tcp"
-    security_groups = [aws_security_group.public.id]
-  }
 
-  # Permitir SSH desde cualquier instancia en subnet pública (incluye bastion)
-  ingress {
-    description = "Allow SSH from public subnet (bastion access)"
-    from_port   = 22
-    to_port     = 22
-    protocol    = "tcp"
-    cidr_blocks = [var.public_subnet_cidr]
-  }
 
-  # Permitir tráfico interno dentro de la VPC
+
+
+  # Permitir todo el tráfico interno dentro de la VPC
   ingress {
-    description = "Allow internal VPC traffic"
+    description = "Allow all internal VPC traffic"
     from_port   = 0
-    to_port     = 65535
-    protocol    = "tcp"
+    to_port     = 0
+    protocol    = "-1"
     cidr_blocks = [var.vpc_cidr]
   }
 
@@ -228,24 +214,9 @@ resource "aws_security_group" "private" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
-  # Permitir ICMP entrante (para ping y diagnóstico)
-  ingress {
-    description = "Allow ICMP from VPC"
-    from_port   = -1
-    to_port     = -1
-    protocol    = "icmp"
-    cidr_blocks = [var.vpc_cidr]
-  }
 
-  # Permitir tráfico entrante de retorno desde cualquier lugar (para NAT Gateway)
-  # Los Security Groups son stateful, pero esta regla ayuda con ICMP y otros protocolos sin estado
-  ingress {
-    description = "Allow return traffic from NAT Gateway and Internet"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
-    cidr_blocks = ["0.0.0.0/0"]
-  }
+
+
 
   tags = merge(
     var.tags,
@@ -298,7 +269,7 @@ resource "aws_network_acl" "public" {
   ingress {
     rule_no    = 125
     protocol   = "tcp"
-    from_port  = 1024
+    from_port  = 0
     to_port    = 65535
     cidr_block = "0.0.0.0/0"
     action     = "allow"
@@ -307,7 +278,7 @@ resource "aws_network_acl" "public" {
   ingress {
     rule_no    = 127
     protocol   = "udp"
-    from_port  = 1024
+    from_port  = 0
     to_port    = 65535
     cidr_block = "0.0.0.0/0"
     action     = "allow"
@@ -406,7 +377,7 @@ resource "aws_network_acl" "private" {
   ingress {
     rule_no    = 125
     protocol   = "tcp"
-    from_port  = 1024
+    from_port  = 0
     to_port    = 65535
     cidr_block = "0.0.0.0/0"
     action     = "allow"
@@ -415,7 +386,7 @@ resource "aws_network_acl" "private" {
   ingress {
     rule_no    = 127
     protocol   = "udp"
-    from_port  = 1024
+    from_port  = 0
     to_port    = 65535
     cidr_block = "0.0.0.0/0"
     action     = "allow"
