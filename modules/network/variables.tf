@@ -63,6 +63,28 @@ variable "private_subnet_az" {
   }
 }
 
+variable "private_subnet_b_cidr" {
+  type        = string
+  description = "CIDR block for the second private subnet"
+  default     = ""
+
+  validation {
+    condition     = var.private_subnet_b_cidr == "" || can(cidrhost(var.private_subnet_b_cidr, 0))
+    error_message = "Private subnet B CIDR must be a valid CIDR block."
+  }
+}
+
+variable "private_subnet_b_az" {
+  type        = string
+  description = "Availability Zone for the second private subnet"
+  default     = ""
+
+  validation {
+    condition     = var.private_subnet_b_az == "" || can(regex("^[a-z]+-[a-z]+-[0-9]+[a-z]$", var.private_subnet_b_az))
+    error_message = "Availability Zone must be in the format 'region-zone' (e.g., mx-central-1c)."
+  }
+}
+
 variable "tags" {
   type        = map(string)
   description = "Common tags to apply to all resources"

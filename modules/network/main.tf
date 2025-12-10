@@ -51,6 +51,23 @@ resource "aws_subnet" "private" {
   )
 }
 
+# Segunda Subred privada (opcional, para HA de RDS)
+resource "aws_subnet" "private_b" {
+  count = var.private_subnet_b_cidr != "" ? 1 : 0
+
+  vpc_id            = aws_vpc.this.id
+  cidr_block        = var.private_subnet_b_cidr
+  availability_zone = var.private_subnet_b_az
+
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.name_prefix}-subnet-private-b"
+      Tier = "private"
+    }
+  )
+}
+
 # Tabla de ruteo pública
 resource "aws_route_table" "public" {
   vpc_id = aws_vpc.this.id
@@ -91,6 +108,14 @@ resource "aws_route_table" "private" {
 # Asociar tabla de ruteo privada a la subred privada
 resource "aws_route_table_association" "private_assoc" {
   subnet_id      = aws_subnet.private.id
+  route_table_id = aws_route_table.private.id
+}
+
+# Asociar tabla de ruteo privada a la segunda subred privada
+resource "aws_route_table_association" "private_b_assoc" {
+  count = var.private_subnet_b_cidr != "" ? 1 : 0
+
+  subnet_id      = aws_subnet.private_b[0].id
   route_table_id = aws_route_table.private.id
 }
 
@@ -415,6 +440,13 @@ resource "aws_network_acl" "private" {
 resource "aws_network_acl_association" "private" {
   network_acl_id = aws_network_acl.private.id
   subnet_id      = aws_subnet.private.id
+}
+
+resource "aws_network_acl_association" "private_b" {
+  count = var.private_subnet_b_cidr != "" ? 1 : 0
+
+  network_acl_id = aws_network_acl.private.id
+  subnet_id      = aws_subnet.private_b[0].id
 }
 
 # ============================================================================

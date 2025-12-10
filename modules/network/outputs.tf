@@ -13,6 +13,11 @@ output "private_subnet_id" {
   description = "ID of the private subnet"
 }
 
+output "private_subnet_b_id" {
+  value       = var.private_subnet_b_cidr != "" ? aws_subnet.private_b[0].id : null
+  description = "ID of the second private subnet"
+}
+
 output "public_security_group_id" {
   value       = aws_security_group.public.id
   description = "ID of the public security group"

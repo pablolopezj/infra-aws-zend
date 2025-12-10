@@ -107,6 +107,32 @@ variable "private_subnet_az" {
   }
 }
 
+variable "private_subnet_b_cidr" {
+  type        = string
+  description = "CIDR block for the second private subnet"
+  default     = "10.0.4.0/24" # Ensuring no overlap with commonly used .1, .2, .3
+
+  validation {
+    condition     = can(cidrhost(var.private_subnet_b_cidr, 0))
+    error_message = "Private subnet B CIDR must be a valid CIDR block."
+  }
+}
+
+variable "private_subnet_b_az" {
+  type        = string
+  description = "Availability Zone for the second private subnet"
+  default     = "mx-central-1c" # Using 1c as 1b might be used by private_a or public_b, or vice-versa. Wait, private_a default is 1b? Let's check logic.
+  
+  # Previous snippet showed private_subnet_az default="mx-central-1b".
+  # So we should use a DIFFERENT AZ for HA. mx-central-1a or 1c.
+  # public_subnet_az is 1a.
+  # Let's use 1c or 1a. 1a already has public. 1c is clean.
+  validation {
+    condition     = can(regex("^[a-z]+-[a-z]+-[0-9]+[a-z]$", var.private_subnet_b_az))
+    error_message = "Availability Zone must be in the format 'region-zone' (e.g., mx-central-1c)."
+  }
+}
+
 variable "public_subnet_b_cidr" {
   type        = string
   description = "CIDR block for the second public subnet (required for ALB)"
@@ -325,7 +351,7 @@ variable "rds_monitoring_interval" {
 variable "rds_engine_version" {
   type        = string
   description = "PostgreSQL engine version (e.g., '16', '15', '14'). Leave empty for latest"
-  default     = "16"
+  default     = "16.11"
 }
 
 variable "rds_parameter_group_family" {
