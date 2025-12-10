@@ -294,6 +294,35 @@ resource "aws_network_acl" "public" {
     action     = "allow"
   }
 
+  # Permitir tráfico de retorno (puertos efímeros) desde Internet hacia el NAT GW
+  ingress {
+    rule_no    = 125
+    protocol   = "tcp"
+    from_port  = 1024
+    to_port    = 65535
+    cidr_block = "0.0.0.0/0"
+    action     = "allow"
+  }
+
+  ingress {
+    rule_no    = 127
+    protocol   = "udp"
+    from_port  = 1024
+    to_port    = 65535
+    cidr_block = "0.0.0.0/0"
+    action     = "allow"
+  }
+
+  # opcional: ICMP (todos los tipos/códigos)
+  ingress {
+    rule_no    = 130
+    protocol   = "icmp"
+    from_port  = 0
+    to_port    = 0
+    cidr_block = "0.0.0.0/0"
+    action     = "allow"
+  }
+
   # Permitir tráfico entrante desde VPC (necesario para NAT Gateway)
   ingress {
     rule_no    = 120
@@ -367,6 +396,35 @@ resource "aws_network_acl" "private" {
   egress {
     rule_no    = 110
     protocol   = "-1"
+    from_port  = 0
+    to_port    = 0
+    cidr_block = "0.0.0.0/0"
+    action     = "allow"
+  }
+
+  # Permitir tráfico de retorno (puertos efímeros) desde Internet/NAT
+  ingress {
+    rule_no    = 125
+    protocol   = "tcp"
+    from_port  = 1024
+    to_port    = 65535
+    cidr_block = "0.0.0.0/0"
+    action     = "allow"
+  }
+
+  ingress {
+    rule_no    = 127
+    protocol   = "udp"
+    from_port  = 1024
+    to_port    = 65535
+    cidr_block = "0.0.0.0/0"
+    action     = "allow"
+  }
+
+  # opcional: ICMP (todos los tipos/códigos)
+  ingress {
+    rule_no    = 130
+    protocol   = "icmp"
     from_port  = 0
     to_port    = 0
     cidr_block = "0.0.0.0/0"
