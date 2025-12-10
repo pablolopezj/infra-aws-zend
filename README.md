@@ -30,7 +30,7 @@ Este proyecto gestiona la infraestructura completa para la aplicación Zend en A
 - **ALB (Application Load Balancer)** con soporte para HTTP/HTTPS condicional
 - **CloudFront** con soporte para orígenes S3 y ALB/EC2, y OAI para acceso seguro a S3
 - **WAF (Web Application Firewall)** asociado a CloudFront para protección contra ataques
-- **RDS PostgreSQL** (opcional, comentado por defecto)
+- **RDS PostgreSQL** con **Secrets Manager** para gestión segura de credenciales
 - **Backend remoto** (S3 + DynamoDB) para gestión segura del estado de Terraform
 
 ## 📁 Estructura del Proyecto
@@ -200,11 +200,16 @@ Una vez que el backend está creado, puedes usar el entorno de producción:
    - CloudFront Distribution con soporte para orígenes S3 (con OAI) o ALB/EC2
    - WAF (Web Application Firewall) en us-east-1 asociado a CloudFront
    - Key Pair para acceso SSH (si está configurado)
-   - RDS PostgreSQL (opcional, comentado por defecto)
+   - **RDS PostgreSQL** en subredes privadas (Multi-AZ coverage) con credenciales en **Secrets Manager**
 
 5. Verifica los outputs:
    ```bash
    terraform output
+   ```
+
+   Para obtener la contraseña de la base de datos:
+   ```bash
+   aws secretsmanager get-secret-value --secret-id <secret_arn_from_output> --region mx-central-1
    ```
 
 ## 🏗️ Arquitectura
@@ -256,14 +261,14 @@ Una vez que el backend está creado, puedes usar el entorno de producción:
 │  │                    Subred Privada                            │  │
 │  │                    (10.0.2.0/24)                             │  │
 │  │                    mx-central-1b                             │  │
-│  │                                                              │  │
-│  │  ┌──────────────┐                                           │  │
-│  │  │ EC2 Instance │                                           │  │
-│  │  │ (t4g.medium) │                                           │  │
-│  │  │ 30GB root    │                                           │  │
-│  │  │ + EBS 100GB  │                                           │  │
-│  │  └──────────────┘                                           │  │
-│  │                                                              │  │
+  │                                                              │  │
+  │  ┌──────────────┐    ┌──────────────┐                    │  │
+  │  │ EC2 Instance │    │ RDS Instance │                    │  │
+  │  │ (t4g.medium) │    │ (Postgres)   │                    │  │
+  │  │ 30GB root    │    │              │                    │  │
+  │  │ + EBS 100GB  │    │              │                    │  │
+  │  └──────────────┘    └──────────────┘                    │  │
+  │                                                              │  │
 │  │  ┌──────────────┐                                           │  │
 │  │  │ S3 Bucket    │  ← CloudFront OAI (acceso seguro)        │  │
 │  │  │ (app-data)   │                                           │  │
@@ -309,8 +314,10 @@ Una vez que el backend está creado, puedes usar el entorno de producción:
 | `vpc_cidr` | CIDR block para la VPC | `10.0.0.0/16` |
 | `public_subnet_cidr` | CIDR block para subred pública | `10.0.1.0/24` |
 | `public_subnet_az` | Availability Zone para subred pública | `mx-central-1a` |
-| `private_subnet_cidr` | CIDR block para subred privada | `10.0.2.0/24` |
-| `private_subnet_az` | Availability Zone para subred privada | `mx-central-1b` |
+| `private_subnet_cidr` | CIDR block para subred privada A | `10.0.2.0/24` |
+| `private_subnet_az` | Availability Zone para subred privada A | `mx-central-1b` |
+| `private_subnet_b_cidr` | CIDR block para subred privada B (RDS HA) | `10.0.4.0/24` |
+| `private_subnet_b_az` | Availability Zone para subred privada B | `mx-central-1c` |
 | `enable_nat_gateway` | Habilitar NAT Gateway para acceso a internet desde subnet privada | `true` |
 | `enable_ec2_instance` | Habilitar creación de instancia EC2 | `true` |
 | `ec2_instance_type` | Tipo de instancia EC2 | `t4g.medium` |
@@ -545,6 +552,10 @@ terraform output ecr_registry_id
 terraform output nat_gateway_id
 terraform output nat_gateway_public_ip
 
+# Ver Endpoint RDS
+terraform output rds_endpoint
+terraform output rds_port
+
 # Destruir infraestructura (¡cuidado!)
 terraform destroy
 ```
@@ -683,6 +694,18 @@ aws ecr describe-images --repository-name $(terraform output -raw ecr_repository
 
 **Nota**: Consulta `USO_ECR.md` para una guía completa sobre el uso de ECR, incluyendo autenticación, build y push de imágenes, y gestión de lifecycle policies.
 
+### Conectarse a RDS (Túnel SSH)
+
+Para conectar clientes SQL locales a la RDS privada:
+
+```bash
+# Se usa el Bastion como puente
+ssh -i ~/.ssh/zend-app-key.pem -N -L 5433:<RDS_ENDPOINT>:5432 ec2-user@<BASTION_IP>
+```
+Luego conecta tu cliente a `localhost:5433` con usuario `postgres`. La contraseña está en Secrets Manager.
+
+Consulta **[GUIA_CONEXION_REMOTA.md](GUIA_CONEXION_REMOTA.md)** para más detalles.
+
 ## ⚠️ Notas Importantes
 
 1. **Orden de ejecución**: Siempre ejecuta `bootstrap` antes de `prod` la primera vez.
@@ -749,8 +772,8 @@ Mejoras recomendadas para el futuro:
 - [x] Configurar acceso seguro S3 con CloudFront OAI ✅
 - [x] Crear módulo de ECR para almacenamiento de imágenes Docker ✅
 - [x] Agregar NAT Gateway para conectividad saliente de la subred privada ✅
-- [ ] Crear múltiples subredes privadas por AZ para alta disponibilidad
-- [ ] Agregar módulo de bases de datos (RDS) - código listo, descomentar para usar
+- [x] Crear múltiples subredes privadas por AZ para alta disponibilidad (RDS) ✅
+- [x] Agregar módulo de bases de datos (RDS) con Secrets Manager ✅
 - [ ] Implementar Auto Scaling Groups
 - [ ] Agregar CloudWatch Alarms y Logs
 - [ ] Configurar certificados ACM para HTTPS en ALB
