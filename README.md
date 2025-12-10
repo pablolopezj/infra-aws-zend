@@ -311,6 +311,7 @@ Una vez que el backend está creado, puedes usar el entorno de producción:
 | `public_subnet_az` | Availability Zone para subred pública | `mx-central-1a` |
 | `private_subnet_cidr` | CIDR block para subred privada | `10.0.2.0/24` |
 | `private_subnet_az` | Availability Zone para subred privada | `mx-central-1b` |
+| `enable_nat_gateway` | Habilitar NAT Gateway para acceso a internet desde subnet privada | `true` |
 | `enable_ec2_instance` | Habilitar creación de instancia EC2 | `true` |
 | `ec2_instance_type` | Tipo de instancia EC2 | `t4g.medium` |
 | `ec2_key_name` | Nombre del key pair para SSH | `zend-app-key` |
@@ -540,6 +541,10 @@ terraform output ecr_repository_name
 terraform output ecr_repository_arn
 terraform output ecr_registry_id
 
+# Ver información de NAT Gateway
+terraform output nat_gateway_id
+terraform output nat_gateway_public_ip
+
 # Destruir infraestructura (¡cuidado!)
 terraform destroy
 ```
@@ -704,8 +709,10 @@ aws ecr describe-images --repository-name $(terraform output -raw ecr_repository
    - CloudFront (50 GB salida, 1M requests): ~$4.50 USD/mes
    - WAF (1 Web ACL, 3 reglas, 1 managed rule group): ~$5-10 USD/mes
    - ECR (almacenamiento de imágenes Docker, ~10 GB): ~$1 USD/mes
-   - **Total estimado (sin ALB/CloudFront/WAF/ECR)**: ~$57-72 USD/mes
+   - NAT Gateway (si habilitado): ~$32-45 USD/mes + costos de transferencia de datos
+   - **Total estimado (sin ALB/CloudFront/WAF/ECR/NAT)**: ~$57-72 USD/mes
    - **Total estimado (con ALB/CloudFront/WAF/ECR)**: ~$83-107 USD/mes
+   - **Total estimado (con ALB/CloudFront/WAF/ECR/NAT)**: ~$115-152 USD/mes
 
 7. **Seguridad**: 
    - El bucket S3 tiene acceso público bloqueado y encriptación habilitada
@@ -741,7 +748,7 @@ Mejoras recomendadas para el futuro:
 - [x] Implementar segunda subnet pública para ALB (2 AZs) ✅
 - [x] Configurar acceso seguro S3 con CloudFront OAI ✅
 - [x] Crear módulo de ECR para almacenamiento de imágenes Docker ✅
-- [ ] Agregar NAT Gateway para conectividad saliente de la subred privada
+- [x] Agregar NAT Gateway para conectividad saliente de la subred privada ✅
 - [ ] Crear múltiples subredes privadas por AZ para alta disponibilidad
 - [ ] Agregar módulo de bases de datos (RDS) - código listo, descomentar para usar
 - [ ] Implementar Auto Scaling Groups

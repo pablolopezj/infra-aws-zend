@@ -47,3 +47,18 @@ output "internet_gateway_id" {
   value       = aws_internet_gateway.this.id
   description = "ID of the Internet Gateway"
 }
+
+output "nat_gateway_id" {
+  value       = var.enable_nat_gateway ? aws_nat_gateway.this[0].id : null
+  description = "ID of the NAT Gateway (if enabled)"
+}
+
+output "nat_gateway_public_ip" {
+  value       = var.enable_nat_gateway ? aws_eip.nat[0].public_ip : null
+  description = "Public IP address of the NAT Gateway (if enabled)"
+}
+
+output "nat_gateway_eip_id" {
+  value       = var.enable_nat_gateway ? aws_eip.nat[0].id : null
+  description = "Elastic IP ID of the NAT Gateway (if enabled)"
+}

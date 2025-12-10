@@ -28,6 +28,8 @@ module "network" {
   private_subnet_cidr = var.private_subnet_cidr
   private_subnet_az   = var.private_subnet_az
 
+  enable_nat_gateway = var.enable_nat_gateway
+
   tags        = local.common_tags
   name_prefix = local.name_prefix
 }
@@ -117,11 +119,11 @@ module "compute" {
   key_name = var.ec2_key_name != "" ? var.ec2_key_name : (var.create_key_pair && var.public_key_path != "" ? module.keypair[0].key_name : null)
 
   # Configuración de EBS según especificaciones
-  ebs_volume_size     = 100
-  ebs_volume_type     = "gp3"
-  ebs_iops            = 3000
-  ebs_throughput      = 125
-  enable_snapshots    = 1  # 1 vez al día
+  ebs_volume_size         = 100
+  ebs_volume_type         = "gp3"
+  ebs_iops                = 3000
+  ebs_throughput          = 125
+  enable_snapshots        = 1 # 1 vez al día
   snapshot_retention_days = 7
 
   # Monitorización desactivada
@@ -177,9 +179,9 @@ module "bastion" {
 
   name_prefix = local.name_prefix
 
-  vpc_id     = module.network.vpc_id
-  subnet_id  = module.network.public_subnet_id
-  vpc_cidr   = var.vpc_cidr
+  vpc_id    = module.network.vpc_id
+  subnet_id = module.network.public_subnet_id
+  vpc_cidr  = var.vpc_cidr
 
   instance_type = var.bastion_instance_type
   key_name      = var.ec2_key_name != "" ? var.ec2_key_name : (var.create_key_pair && var.public_key_path != "" ? module.keypair[0].key_name : null)
@@ -196,13 +198,13 @@ module "s3" {
 
   bucket_name = var.s3_bucket_name != "" ? var.s3_bucket_name : "${local.name_prefix}-app-data"
 
-  enable_versioning            = var.s3_enable_versioning
-  enable_lifecycle_transition  = var.s3_enable_lifecycle_transition
-  transition_to_glacier_ir_days = var.s3_transition_to_glacier_ir_days
-  transition_to_glacier_days   = var.s3_transition_to_glacier_days
-  transition_to_deep_archive_days = var.s3_transition_to_deep_archive_days
+  enable_versioning                                = var.s3_enable_versioning
+  enable_lifecycle_transition                      = var.s3_enable_lifecycle_transition
+  transition_to_glacier_ir_days                    = var.s3_transition_to_glacier_ir_days
+  transition_to_glacier_days                       = var.s3_transition_to_glacier_days
+  transition_to_deep_archive_days                  = var.s3_transition_to_deep_archive_days
   noncurrent_version_transition_to_glacier_ir_days = var.s3_noncurrent_version_transition_to_glacier_ir_days
-  noncurrent_version_expiration_days = var.s3_noncurrent_version_expiration_days
+  noncurrent_version_expiration_days               = var.s3_noncurrent_version_expiration_days
 
   # Permitir acceso desde la instancia EC2 si tiene IAM role
   allowed_principal_arns = var.enable_ec2_instance && var.create_ec2_s3_role ? [aws_iam_role.ec2_s3_access[0].arn] : (var.ec2_iam_role_arn != "" ? [var.ec2_iam_role_arn] : [])
@@ -225,13 +227,13 @@ module "ecr" {
 
   repository_name = var.ecr_repository_name != "" ? var.ecr_repository_name : "${local.name_prefix}-app"
 
-  image_tag_mutability     = var.ecr_image_tag_mutability
-  scan_on_push             = var.ecr_scan_on_push
-  encryption_type          = var.ecr_encryption_type
-  kms_key_id               = var.ecr_kms_key_id
-  enable_lifecycle_policy  = var.ecr_enable_lifecycle_policy
-  max_image_count          = var.ecr_max_image_count
-  max_image_age_days       = var.ecr_max_image_age_days
+  image_tag_mutability    = var.ecr_image_tag_mutability
+  scan_on_push            = var.ecr_scan_on_push
+  encryption_type         = var.ecr_encryption_type
+  kms_key_id              = var.ecr_kms_key_id
+  enable_lifecycle_policy = var.ecr_enable_lifecycle_policy
+  max_image_count         = var.ecr_max_image_count
+  max_image_age_days      = var.ecr_max_image_age_days
 
   tags = local.common_tags
 }
@@ -293,7 +295,7 @@ module "alb" {
 
   name_prefix = local.name_prefix
 
-  vpc_id     = module.network.vpc_id
+  vpc_id = module.network.vpc_id
   subnet_ids = var.enable_alb && var.enable_cloudfront ? [
     module.network.public_subnet_id,
     aws_subnet.public_b[0].id
@@ -363,7 +365,7 @@ module "waf" {
   name_prefix = local.name_prefix
 
   enable_rate_limiting = var.waf_enable_rate_limiting
-  rate_limit          = var.waf_rate_limit
+  rate_limit           = var.waf_rate_limit
 
   tags = local.common_tags
 }
@@ -384,15 +386,15 @@ module "cloudfront" {
   # Origen: ALB, S3, o EC2 directo (solo si está en subnet pública)
   # Prioridad: S3 > ALB > EC2 directo (solo si pública)
   origin_type = var.cloudfront_origin_s3_bucket != "" ? "s3" : "custom"
-  
+
   origin_domain_name = var.cloudfront_origin_s3_bucket != "" ? (
     var.enable_s3 ? "${module.s3[0].bucket_regional_domain_name}" : "${var.cloudfront_origin_s3_bucket}.s3.${var.aws_region}.amazonaws.com"
-  ) : (
+    ) : (
     var.enable_alb && var.enable_cloudfront ? module.alb[0].alb_dns_name : (
       var.enable_ec2_instance && var.ec2_subnet_tier == "public" ? module.compute[0].instance_public_ip : ""
     )
   )
-  
+
   origin_id = var.cloudfront_origin_s3_bucket != "" ? "s3-origin" : (
     var.enable_alb && var.enable_cloudfront ? "alb-origin" : (
       var.enable_ec2_instance && var.ec2_subnet_tier == "public" ? "ec2-origin" : "default-origin"
@@ -415,7 +417,7 @@ module "cloudfront" {
   enable_compression  = true
 
   # Viewer protocol policy: redirigir HTTP a HTTPS
-  viewer_protocol_policy = "redirect-to-https"
+  viewer_protocol_policy  = "redirect-to-https"
   use_default_certificate = true # Usar certificado CloudFront por defecto
 
   tags = local.common_tags

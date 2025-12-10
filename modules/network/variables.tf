@@ -123,5 +123,11 @@ variable "allowed_public_ingress_ports" {
   default     = [80, 443]
 }
 
+variable "enable_nat_gateway" {
+  type        = bool
+  description = "Enable NAT Gateway for private subnet internet access"
+  default     = false
+}
+
 
 

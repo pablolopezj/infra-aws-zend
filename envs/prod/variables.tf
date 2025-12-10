@@ -134,6 +134,12 @@ variable "public_subnet_b_az" {
   }
 }
 
+variable "enable_nat_gateway" {
+  type        = bool
+  description = "Enable NAT Gateway for private subnet internet access. Required if EC2 instances in private subnet need outbound internet access"
+  default     = true
+}
+
 variable "enable_ec2_instance" {
   type        = bool
   description = "Enable EC2 instance creation"

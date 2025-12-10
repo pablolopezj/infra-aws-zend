@@ -48,6 +48,16 @@ output "internet_gateway_id" {
   description = "ID of the Internet Gateway"
 }
 
+output "nat_gateway_id" {
+  value       = module.network.nat_gateway_id
+  description = "ID of the NAT Gateway (if enabled)"
+}
+
+output "nat_gateway_public_ip" {
+  value       = module.network.nat_gateway_public_ip
+  description = "Public IP address of the NAT Gateway (if enabled)"
+}
+
 # Outputs de Compute (EC2)
 output "ec2_instance_id" {
   value       = var.enable_ec2_instance ? module.compute[0].instance_id : null

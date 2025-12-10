@@ -78,6 +78,15 @@ resource "aws_security_group" "bastion" {
     cidr_blocks = var.allowed_ssh_cidrs
   }
 
+  # Permitir tráfico entrante desde VPC (para comunicación con instancias privadas)
+  ingress {
+    description = "Allow traffic from VPC (for private instance communication)"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = [var.vpc_cidr]
+  }
+
   # Permitir tráfico saliente a Internet
   egress {
     description = "Allow all outbound traffic to Internet"

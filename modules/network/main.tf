@@ -95,6 +95,52 @@ resource "aws_route_table_association" "private_assoc" {
 }
 
 # ============================================================================
+# NAT Gateway (para acceso a internet desde subnet privada)
+# ============================================================================
+
+# Elastic IP para NAT Gateway
+resource "aws_eip" "nat" {
+  count = var.enable_nat_gateway ? 1 : 0
+
+  domain = "vpc"
+
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.name_prefix}-nat-eip"
+    }
+  )
+
+  depends_on = [aws_internet_gateway.this]
+}
+
+# NAT Gateway en subnet pública
+resource "aws_nat_gateway" "this" {
+  count = var.enable_nat_gateway ? 1 : 0
+
+  allocation_id = aws_eip.nat[0].id
+  subnet_id     = aws_subnet.public.id
+
+  tags = merge(
+    var.tags,
+    {
+      Name = "${var.name_prefix}-nat"
+    }
+  )
+
+  depends_on = [aws_internet_gateway.this]
+}
+
+# Ruta por defecto hacia NAT Gateway (para acceso a internet desde subnet privada)
+resource "aws_route" "private_nat_access" {
+  count = var.enable_nat_gateway ? 1 : 0
+
+  route_table_id         = aws_route_table.private.id
+  destination_cidr_block = "0.0.0.0/0"
+  nat_gateway_id         = aws_nat_gateway.this[0].id
+}
+
+# ============================================================================
 # Security Groups
 # ============================================================================
 
@@ -182,6 +228,25 @@ resource "aws_security_group" "private" {
     cidr_blocks = ["0.0.0.0/0"]
   }
 
+  # Permitir ICMP entrante (para ping y diagnóstico)
+  ingress {
+    description = "Allow ICMP from VPC"
+    from_port   = -1
+    to_port     = -1
+    protocol    = "icmp"
+    cidr_blocks = [var.vpc_cidr]
+  }
+
+  # Permitir tráfico entrante de retorno desde cualquier lugar (para NAT Gateway)
+  # Los Security Groups son stateful, pero esta regla ayuda con ICMP y otros protocolos sin estado
+  ingress {
+    description = "Allow return traffic from NAT Gateway and Internet"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
   tags = merge(
     var.tags,
     {
@@ -229,7 +294,7 @@ resource "aws_network_acl" "public" {
     action     = "allow"
   }
 
-  # Permitir tráfico entrante desde VPC
+  # Permitir tráfico entrante desde VPC (necesario para NAT Gateway)
   ingress {
     rule_no    = 120
     protocol   = "-1"
