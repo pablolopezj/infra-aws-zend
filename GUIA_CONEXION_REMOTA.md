@@ -1,82 +1,76 @@
-# Guía de Conexión Remota (Desde otra computadora)
+# Guía de Conexión Remota (Vía AWS SSM)
 
-Esta guía detalla los pasos para conectar a la infraestructura (EC2 y RDS) desde una computadora diferente a la que usó Terraform.
+Esta guía detalla los pasos para conectar a la infraestructura (EC2 y RDS) utilizando **AWS Systems Manager (SSM)**. Este método es más seguro que SSH tradicional ya que no requiere abrir puertos (22) al internet público.
 
-## 1. Transferir la Llave Privada (.pem)
-Necesitas el archivo `.pem` (ej. `zend-app-key.pem`) que se generó o usó durante el despliegue.
-- **Origen**: Computadora donde ejecutaste Terraform.
-- **Destino**: `~/.ssh/` en la nueva computadora.
+## 1. Prerrequisitos
 
-⚠️ **IMPORTANTE**: La llave no debe compartirse por medios inseguros (email, chat público). Usa USB seguro, SFTP o gestor de contraseñas.
+### AWS CLI y Session Manager Plugin
+Necesitas tener instaladas las siguientes herramientas en tu computadora local:
 
-## 2. Configurar Permisos
-En la nueva computadora, abre una terminal y ajusta los permisos de la llave para que sea de lectura exclusiva para tu usuario (requisito de SSH):
+1.  **AWS CLI**: Configurado con tus credenciales.
+    ```bash
+    aws configure
+    ```
+2.  **Session Manager Plugin**: Complemento necesario para el CLI.
+    - **MacOS (Homebrew)**: `brew install --cask session-manager-plugin`
+    - **Otros**: [Guía de instalación oficial](https://docs.aws.amazon.com/systems-manager/latest/userguide/session-manager-working-with-install-plugin.html)
+
+## 2. Obtener Datos de Conexión
+Ejecuta el siguiente comando en el directorio `envs/prod` para obtener los IDs necesarios:
 
 ```bash
-chmod 400 ~/.ssh/zend-app-key.pem
+cd envs/prod
+INSTANCIA_ID=$(terraform output -raw ec2_instance_id)
+RDS_ADDRESS=$(terraform output -raw rds_address)
+
+echo "Instancia ID: $INSTANCIA_ID"
+echo "RDS Address:  $RDS_ADDRESS"
 ```
 
-## 3. Configurar SSH (`~/.ssh/config`)
-Edita o crea el archivo de configuración SSH para simplificar el acceso.
+## 3. Conectarse a la Instancia (Shell Web)
 
-**Archivo**: `~/.ssh/config`
+Para obtener una terminal en la instancia privada:
 
-```ssh
-# ========================================
-# Bastion Host (Puerta de Enlace)
-# ========================================
-Host bastion-zend
-    # Reemplaza con la IP Publica real del Bastion (ver outputs de terraform)
-    HostName 78.12.227.2
-    User ec2-user
-    IdentityFile ~/.ssh/zend-app-key.pem
-    StrictHostKeyChecking no
-    UserKnownHostsFile /dev/null
-
-# ========================================
-# Instancia Privada (Vía Bastion)
-# ========================================
-Host zend-app
-    # IP Privada de la instancia (ver outputs)
-    HostName 10.0.2.229
-    User ec2-user
-    IdentityFile ~/.ssh/zend-app-key.pem
-    ProxyCommand ssh -W %h:%p bastion-zend
-    StrictHostKeyChecking no
-    UserKnownHostsFile /dev/null
-
-# ========================================
-# Túnel a RDS (Base de Datos)
-# ========================================
-Host zend-rds-tunnel
-    # Usamos el bastion como puente
-    HostName 78.12.227.2
-    User ec2-user
-    IdentityFile ~/.ssh/zend-app-key.pem
-    # Crea el túnel: Puerto Local 5433 -> RDS Puerto 5432
-    # Reemplaza con el endpoint real de RDS
-    LocalForward 5433 zend-app-prod-mxc1-postgres.xxxxxx.mx-central-1.rds.amazonaws.com:5432
-    StrictHostKeyChecking no
-    UserKnownHostsFile /dev/null
-```
-
-## 4. Conectarse
-
-### A la Instancia Privada (EC2)
 ```bash
-ssh zend-app
+aws ssm start-session --target $INSTANCIA_ID --region mx-central-1
 ```
 
-### A la Base de Datos (RDS)
-1. **Abrir el túnel**:
-   ```bash
-   ssh -N zend-rds-tunnel
-   ```
-   *(Dejar esta terminal abierta, verás que "se cuelga", es normal, está esperando tráfico)*.
+*Nota: Entrarás como usuario `ssm-user` o `ec2-user` dependiendo de la configuración. Para cambiar a root: `sudo -i`.*
 
-2. **Conectar Cliente SQL** (DBeaver, pgAdmin, Datagrip):
-   - **Host**: `localhost` (o `127.0.0.1`)
-   - **Port**: `5433`
-   - **User**: `postgres`
-   - **Password**: *(Obtenla de AWS Secrets Manager)*
-   - **Database**: `zenddb`
+## 4. Conectarse a la Base de Datos (RDS)
+
+Dado que la RDS está en una subred privada, usaremos la instancia EC2 como puente mediante un túnel (Port Forwarding) gestionado por SSM.
+
+### Paso A: Abrir el túnel
+Este comando redirige el puerto local `5433` hacia el puerto `5432` de la RDS remota.
+
+```bash
+aws ssm start-session \
+    --target $INSTANCIA_ID \
+    --document-name AWS-StartPortForwardingSessionToRemoteHost \
+    --parameters '{"host":["'$RDS_ADDRESS'"],"portNumber":["5432"], "localPortNumber":["5433"]}' \
+    --region mx-central-1
+```
+
+**Mantén esta terminal abierta.** Verás un mensaje como "Waiting for connections...".
+
+### Paso B: Conectar tu Cliente SQL
+Configura tu cliente favorito (DBeaver, pgAdmin, DataGrip):
+
+- **Host**: `localhost` (o `127.0.0.1`)
+- **Port**: `5433`
+- **User**: `postgres` (o el usuario maestro configurado)
+- **Password**: Recupérala de AWS Secrets Manager:
+  ```bash
+  aws secretsmanager get-secret-value \
+      --secret-id $(terraform output -raw rds_secret_arn) \
+      --query SecretString --output text \
+      --region mx-central-1
+  ```
+- **Database**: `zenddb`
+
+## Solución de Problemas Comunes
+
+- **Error "SessionManagerPlugin is not found"**: Instala el plugin (ver paso 1).
+- **Error "Target not connected"**: La instancia EC2 puede estar apagada o reiniciándose. Espera unos minutos.
+- **Error "Connection refused" en el cliente SQL**: Asegúrate de que la terminal del túnel (Paso A) siga abierta y sin errores.
