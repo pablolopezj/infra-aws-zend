@@ -174,6 +174,13 @@ resource "aws_iam_role_policy_attachment" "ec2_ecr_readonly" {
   policy_arn = "arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly"
 }
 
+# Attach managed policy para habilitar SSM Session Manager
+resource "aws_iam_role_policy_attachment" "ec2_ssm" {
+  count      = var.enable_ec2_instance && var.create_ec2_s3_role ? 1 : 0
+  role       = aws_iam_role.ec2_s3_access[0].name
+  policy_arn = "arn:aws:iam::aws:policy/AmazonSSMManagedInstanceCore"
+}
+
 # Bastion Host
 module "bastion" {
   count  = var.enable_bastion ? 1 : 0
@@ -298,9 +305,9 @@ module "rds" {
 
   # Permitir acceso desde la instancia EC2 privada
   # Permitir acceso desde la instancia EC2 privada y desde el Bastion (para túneles)
+  # Permitir acceso desde la instancia EC2 privada (via SSM)
   allowed_security_group_ids = compact([
-    var.enable_ec2_instance && var.ec2_subnet_tier == "private" ? module.network.private_security_group_id : "",
-    var.enable_bastion ? module.bastion[0].bastion_security_group_id : ""
+    var.enable_ec2_instance && var.ec2_subnet_tier == "private" ? module.network.private_security_group_id : ""
   ])
 
   backup_retention_days = var.rds_backup_retention_days

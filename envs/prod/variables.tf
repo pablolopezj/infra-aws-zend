@@ -210,7 +210,7 @@ variable "ec2_subnet_tier" {
 variable "enable_bastion" {
   type        = bool
   description = "Enable bastion host creation"
-  default     = true
+  default     = false
 }
 
 variable "bastion_instance_type" {
