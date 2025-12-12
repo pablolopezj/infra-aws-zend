@@ -122,7 +122,7 @@ variable "private_subnet_b_az" {
   type        = string
   description = "Availability Zone for the second private subnet"
   default     = "mx-central-1c" # Using 1c as 1b might be used by private_a or public_b, or vice-versa. Wait, private_a default is 1b? Let's check logic.
-  
+
   # Previous snippet showed private_subnet_az default="mx-central-1b".
   # So we should use a DIFFERENT AZ for HA. mx-central-1a or 1c.
   # public_subnet_az is 1a.
@@ -480,9 +480,19 @@ variable "cloudfront_price_class" {
 
 variable "cloudfront_default_root_object" {
   type        = string
-  description = "Default root object for CloudFront (e.g., index.html)"
+  description = "Default root object for CloudFront distribution"
   default     = "index.html"
 }
+
+# ============================================================================
+# Variables de ACM (AWS Certificate Manager)
+# ============================================================================
+variable "acm_certificate_arn" {
+  type        = string
+  description = "ARN del certificado ACM en us-east-1 para CloudFront (dejar vacío para usar certificado por defecto)"
+  default     = ""
+}
+
 
 variable "waf_enable_rate_limiting" {
   type        = bool

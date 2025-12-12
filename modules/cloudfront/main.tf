@@ -14,6 +14,7 @@ resource "aws_cloudfront_distribution" "app" {
   comment             = "CloudFront distribution for ${var.name_prefix}"
   default_root_object = var.default_root_object
   price_class         = var.price_class
+  aliases             = var.aliases
 
   # WAF asociado (a nivel de distribución)
   # NOTA: CloudFront puede usar WAFs de us-east-1 (requerido para scope CLOUDFRONT)
@@ -41,7 +42,7 @@ resource "aws_cloudfront_distribution" "app" {
       for_each = var.origin_type == "custom" ? [1] : []
       content {
         http_port              = var.origin_http_port
-        https_port            = var.origin_https_port
+        https_port             = var.origin_https_port
         origin_protocol_policy = var.origin_protocol_policy
         origin_ssl_protocols   = var.origin_ssl_protocols
       }

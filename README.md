@@ -14,7 +14,7 @@ Infraestructura como código (IaC) para desplegar recursos de red en AWS usando 
 
 ## 📖 Descripción
 
-Este proyecto gestiona la infraestructura completa para la aplicación Zend en AWS, incluyendo:
+Este proyecto gestiona la infraestructura completa para la aplicación Scoprions.mx, incluyendo:
 
 - **VPC** con subredes públicas y privadas (múltiples AZs para ALB)
 - **Internet Gateway** para conectividad pública
@@ -61,7 +61,7 @@ infra-aws-zend/
     │   ├── main.tf
     │   ├── variables.tf
     │   └── outputs.tf
-    ├── bastion/             # Módulo para Bastion Host
+    ├── bastion/             # Módulo para Bastion Host (opcional)
     │   ├── main.tf
     │   ├── variables.tf
     │   └── outputs.tf
@@ -86,7 +86,7 @@ infra-aws-zend/
     │   ├── variables.tf
     │   ├── outputs.tf
     │   └── versions.tf
-    ├── rds/                 # Módulo para RDS PostgreSQL (opcional)
+    ├── rds/                 # Módulo para RDS PostgreSQL 
     │   ├── main.tf
     │   ├── variables.tf
     │   └── outputs.tf
@@ -203,7 +203,6 @@ Una vez que el backend está creado, puedes usar el entorno de producción:
    - VPC Endpoints para S3 y DynamoDB
    - Instancia EC2 (t4g.medium) con Amazon Linux 2023 en subnet privada
    - Volumen root EBS (30 GB gp3) y volumen de datos (100 GB gp3) con snapshots automáticos
-   - Bastion Host (t4g.micro) con volumen root de 30 GB en subnet pública
    - S3 Bucket para almacenamiento de la aplicación con lifecycle policies y OAI para CloudFront
    - IAM Role y Policy para acceso a S3 desde EC2
    - ECR Repository para almacenar imágenes Docker con lifecycle policies y escaneo de seguridad

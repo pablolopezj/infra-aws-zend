@@ -22,11 +22,11 @@ module "keypair" {
 module "network" {
   source = "../../modules/network"
 
-  vpc_cidr            = var.vpc_cidr
-  public_subnet_cidr  = var.public_subnet_cidr
-  public_subnet_az    = var.public_subnet_az
-  private_subnet_cidr = var.private_subnet_cidr
-  private_subnet_az   = var.private_subnet_az
+  vpc_cidr              = var.vpc_cidr
+  public_subnet_cidr    = var.public_subnet_cidr
+  public_subnet_az      = var.public_subnet_az
+  private_subnet_cidr   = var.private_subnet_cidr
+  private_subnet_az     = var.private_subnet_az
   private_subnet_b_cidr = var.private_subnet_b_cidr
   private_subnet_b_az   = var.private_subnet_b_az
 
@@ -266,7 +266,7 @@ resource "aws_secretsmanager_secret" "rds_credentials" {
 
 # Guardar la versión del secreto
 resource "aws_secretsmanager_secret_version" "rds_credentials" {
-  secret_id     = aws_secretsmanager_secret.rds_credentials.id
+  secret_id = aws_secretsmanager_secret.rds_credentials.id
   secret_string = jsonencode({
     username = var.rds_master_username
     password = random_password.rds_master.result
@@ -296,7 +296,7 @@ module "rds" {
   allocated_storage = var.rds_allocated_storage
   storage_type      = var.rds_storage_type
 
-  database_name  = var.rds_database_name
+  database_name   = var.rds_database_name
   master_username = var.rds_master_username
   master_password = random_password.rds_master.result # Usar contraseña generada
 
@@ -462,11 +462,10 @@ module "cloudfront" {
   )
 
   # Configuración para custom origin (ALB/EC2) - no aplica para S3
-  origin_protocol_policy = var.cloudfront_origin_s3_bucket != "" ? "https-only" : (
-    var.enable_alb ? "https-only" : "http-only"
-  )
-  origin_http_port  = 80
-  origin_https_port = 443
+  # Usar http-only porque el ALB no tiene certificado SSL configurado
+  origin_protocol_policy = var.cloudfront_origin_s3_bucket != "" ? "https-only" : "http-only"
+  origin_http_port       = 80
+  origin_https_port      = 443
 
   # WAF asociado (NO requiere ALB) - CloudFront requiere el ARN completo, no el ID
   waf_web_acl_id = var.enable_waf && var.enable_cloudfront ? module.waf[0].web_acl_arn : ""
@@ -477,8 +476,12 @@ module "cloudfront" {
   enable_compression  = true
 
   # Viewer protocol policy: redirigir HTTP a HTTPS
-  viewer_protocol_policy  = "redirect-to-https"
-  use_default_certificate = true # Usar certificado CloudFront por defecto
+  viewer_protocol_policy = "redirect-to-https"
+
+  # Certificado SSL y dominios personalizados
+  use_default_certificate = var.acm_certificate_arn == "" ? true : false
+  acm_certificate_arn     = var.acm_certificate_arn
+  aliases                 = var.acm_certificate_arn != "" ? ["scorpionpys.mx", "www.scorpionpys.mx"] : []
 
   tags = local.common_tags
 

@@ -134,6 +134,12 @@ variable "acm_certificate_arn" {
   default     = ""
 }
 
+variable "aliases" {
+  type        = list(string)
+  description = "Alternate domain names (CNAMEs) for CloudFront distribution"
+  default     = []
+}
+
 variable "minimum_protocol_version" {
   type        = string
   description = "Minimum SSL/TLS protocol version"
