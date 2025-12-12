@@ -21,7 +21,7 @@ Este proyecto gestiona la infraestructura completa para la aplicación Zend en A
 - **Tablas de ruteo** para subredes públicas y privadas
 - **Security Groups y Network ACLs** para seguridad de red
 - **VPC Endpoints** (S3 y DynamoDB) para minimizar tráfico externo
-- **Bastion Host** para acceso seguro a instancias privadas
+- **AWS SSM Session Manager** para acceso seguro a instancias privadas (Bastion Host opcional)
 - **Instancias EC2** con configuración personalizada (volúmenes de 30GB)
 - **Volúmenes EBS** con snapshots automáticos
 - **Key Pairs** para acceso SSH seguro
@@ -101,11 +101,13 @@ infra-aws-zend/
 Antes de comenzar, asegúrate de tener:
 
 1. **Terraform** instalado (versión >= 1.5.0)
+
    ```bash
    terraform version
    ```
 
 2. **AWS CLI** configurado con credenciales válidas
+
    ```bash
    aws configure
    ```
@@ -126,21 +128,25 @@ Antes de comenzar, asegúrate de tener:
 **⚠️ IMPORTANTE:** Este paso debe ejecutarse **SOLO UNA VEZ** antes de usar el entorno de producción. El backend de Terraform (S3 + DynamoDB) debe existir antes de que el entorno `prod` pueda usar el estado remoto.
 
 1. Navega al directorio bootstrap:
+
    ```bash
    cd envs/bootstrap
    ```
 
 2. Inicializa Terraform (usando backend local):
+
    ```bash
    terraform init
    ```
 
 3. Revisa el plan de ejecución:
+
    ```bash
    terraform plan
    ```
 
 4. Aplica los cambios para crear el bucket S3 y la tabla DynamoDB:
+
    ```bash
    terraform apply
    ```
@@ -150,6 +156,7 @@ Antes de comenzar, asegúrate de tener:
    - **Tabla DynamoDB**: `zend-terraform-locks` (para bloqueo de estado)
 
 5. Verifica que los recursos se crearon correctamente:
+
    ```bash
    terraform output
    ```
@@ -159,11 +166,13 @@ Antes de comenzar, asegúrate de tener:
 Una vez que el backend está creado, puedes usar el entorno de producción:
 
 1. Navega al directorio de producción:
+
    ```bash
    cd ../prod
    ```
 
 2. Inicializa Terraform con el backend remoto:
+
    ```bash
    terraform init
    ```
@@ -171,11 +180,13 @@ Una vez que el backend está creado, puedes usar el entorno de producción:
    Si ya tenías un estado local, Terraform te preguntará si quieres migrar. Responde `yes` para migrar el estado al backend remoto.
 
 3. Revisa el plan de ejecución:
+
    ```bash
    terraform plan
    ```
 
 4. Aplica los cambios para crear la infraestructura de red:
+
    ```bash
    terraform apply
    ```
@@ -203,11 +214,13 @@ Una vez que el backend está creado, puedes usar el entorno de producción:
    - **RDS PostgreSQL** en subredes privadas (Multi-AZ coverage) con credenciales en **Secrets Manager**
 
 5. Verifica los outputs:
+
    ```bash
    terraform output
    ```
 
    Para obtener la contraseña de la base de datos:
+
    ```bash
    aws secretsmanager get-secret-value --secret-id <secret_arn_from_output> --region mx-central-1
    ```
@@ -325,7 +338,7 @@ Una vez que el backend está creado, puedes usar el entorno de producción:
 | `ec2_subnet_tier` | Subnet para EC2 (public/private) | `private` |
 | `create_key_pair` | Crear key pair con Terraform | `false` |
 | `public_key_path` | Ruta a la clave pública SSH | `""` |
-| `enable_bastion` | Habilitar creación de bastion host | `true` |
+| `enable_bastion` | Habilitar creación de bastion host | `false` |
 | `bastion_instance_type` | Tipo de instancia para bastion | `t4g.micro` |
 | `bastion_allowed_ssh_cidrs` | CIDRs permitidos para SSH al bastion | `["0.0.0.0/0"]` |
 | `enable_s3` | Habilitar creación de bucket S3 | `true` |
@@ -560,149 +573,36 @@ terraform output rds_port
 terraform destroy
 ```
 
-### Conectarse a las Instancias
+### Conectarse a las Instancias (Vía SSM)
 
-#### Conectarse al Bastion
+El acceso a la infraestructura se realiza mediante **AWS Systems Manager**, lo que mejora la seguridad al no requerir puertos SSH abiertos.
 
-```bash
-cd envs/prod
-
-# Obtener IP del bastion
-BASTION_IP=$(terraform output -raw bastion_public_ip)
-
-# Conectarse
-ssh -i ~/.ssh/zend-app-key.pem ec2-user@$BASTION_IP
-```
-
-#### Conectarse a la Instancia Privada (a través del Bastion)
-
-**Opción 1: Usando configuración SSH (recomendado)**
-
-Primero, actualiza tu configuración SSH:
+#### Conectarse a la Instancia Privada
 
 ```bash
-# Ejecutar script de actualización
-./actualizar_ssh_config.sh
+# Obtener ID de la instancia
+INSTANCE_ID=$(terraform output -raw ec2_instance_id)
 
-# O manualmente, agrega a ~/.ssh/config:
-# Host bastion-zend
-#     HostName <BASTION_IP>
-#     User ec2-user
-#     IdentityFile ~/.ssh/zend-app-key.pem
-#     StrictHostKeyChecking no
-#
-# Host zend-app
-#     HostName <PRIVATE_IP>
-#     User ec2-user
-#     IdentityFile ~/.ssh/zend-app-key.pem
-#     ProxyCommand ssh -W %h:%p bastion-zend
-#     StrictHostKeyChecking no
+# Iniciar sesión
+aws ssm start-session --target $INSTANCE_ID --region mx-central-1
 ```
 
-Luego conectarte simplemente:
+#### Conectarse a RDS (Túnel)
+
+Para conectar clientes SQL locales a la RDS privada, usamos SSM Port Forwarding:
 
 ```bash
-ssh zend-app
+# 1. Obtener datos
+INSTANCE_ID=$(terraform output -raw ec2_instance_id)
+RDS_ADDRESS=$(terraform output -raw rds_address)
+
+# 2. Abrir túnel (Puerto local 5433 -> Instancia -> RDS:5432)
+aws ssm start-session \
+    --target $INSTANCE_ID \
+    --document-name AWS-StartPortForwardingSessionToRemoteHost \
+    --parameters '{"host":["'$RDS_ADDRESS'"],"portNumber":["5432"], "localPortNumber":["5433"]}' \
+    --region mx-central-1
 ```
-
-**Opción 2: Comando directo**
-
-```bash
-cd envs/prod
-BASTION_IP=$(terraform output -raw bastion_public_ip)
-PRIVATE_IP=$(terraform output -raw ec2_instance_private_ip)
-
-ssh -i ~/.ssh/zend-app-key.pem \
-    -o ProxyCommand="ssh -i ~/.ssh/zend-app-key.pem -W %h:%p ec2-user@$BASTION_IP" \
-    ec2-user@$PRIVATE_IP
-```
-
-**Opción 3: En dos pasos**
-
-```bash
-# 1. Conectarse al bastion
-ssh -i ~/.ssh/zend-app-key.pem ec2-user@$BASTION_IP
-
-# 2. Desde el bastion, conectarse a la instancia privada
-ssh ec2-user@$PRIVATE_IP
-```
-
-#### Acceder a S3 desde la Instancia EC2
-
-La instancia EC2 tiene acceso automático al bucket S3 a través de un IAM Role:
-
-```bash
-# Conectarse a la instancia
-ssh zend-app
-
-# Obtener nombre del bucket (desde tu máquina local)
-cd envs/prod
-BUCKET_NAME=$(terraform output -raw s3_bucket_id)
-echo "Bucket: $BUCKET_NAME"
-
-# Desde la instancia EC2, listar objetos
-aws s3 ls s3://$BUCKET_NAME
-
-# Subir un archivo
-aws s3 cp archivo.txt s3://$BUCKET_NAME/
-
-# Descargar un archivo
-aws s3 cp s3://$BUCKET_NAME/archivo.txt ./
-
-# Sincronizar directorio
-aws s3 sync ./mi-directorio s3://$BUCKET_NAME/mi-directorio/
-
-# Ver información del bucket
-aws s3api get-bucket-location --bucket $BUCKET_NAME
-aws s3api get-bucket-lifecycle-configuration --bucket $BUCKET_NAME
-```
-
-**Nota**: El bucket S3 se crea con el nombre: `zend-app-prod-mxc1-app-data` (o el especificado en `s3_bucket_name`).
-
-#### Usar ECR para Push/Pull de Imágenes Docker
-
-El repositorio ECR permite almacenar y gestionar imágenes Docker de forma segura:
-
-```bash
-# Obtener información del repositorio
-cd envs/prod
-ECR_REPO_URL=$(terraform output -raw ecr_repository_url)
-ECR_REGISTRY_ID=$(terraform output -raw ecr_registry_id)
-
-# Autenticarse en ECR
-aws ecr get-login-password --region mx-central-1 | docker login --username AWS --password-stdin $ECR_REPO_URL
-
-# O construir y hacer push usando el script incluido
-./build_and_push.sh
-
-# O manualmente:
-# 1. Construir la imagen
-docker build -t zend-app:latest .
-
-# 2. Etiquetar la imagen para ECR
-docker tag zend-app:latest $ECR_REPO_URL:latest
-
-# 3. Hacer push
-docker push $ECR_REPO_URL:latest
-
-# Listar imágenes en el repositorio
-aws ecr list-images --repository-name $(terraform output -raw ecr_repository_name) --region mx-central-1
-
-# Ver detalles de una imagen
-aws ecr describe-images --repository-name $(terraform output -raw ecr_repository_name) --image-ids imageTag=latest --region mx-central-1
-```
-
-**Nota**: Consulta `USO_ECR.md` para una guía completa sobre el uso de ECR, incluyendo autenticación, build y push de imágenes, y gestión de lifecycle policies.
-
-### Conectarse a RDS (Túnel SSH)
-
-Para conectar clientes SQL locales a la RDS privada:
-
-```bash
-# Se usa el Bastion como puente
-ssh -i ~/.ssh/zend-app-key.pem -N -L 5433:<RDS_ENDPOINT>:5432 ec2-user@<BASTION_IP>
-```
-Luego conecta tu cliente a `localhost:5433` con usuario `postgres`. La contraseña está en Secrets Manager.
 
 Consulta **[GUIA_CONEXION_REMOTA.md](GUIA_CONEXION_REMOTA.md)** para más detalles.
 
@@ -718,7 +618,7 @@ Consulta **[GUIA_CONEXION_REMOTA.md](GUIA_CONEXION_REMOTA.md)** para más detall
 
 5. **Snapshots EBS**: Los snapshots se crean automáticamente (1 vez al día por defecto) y se retienen 7 días. Costo estimado: ~$0.75-1.50 USD/mes.
 
-6. **Costo**: 
+6. **Costo**:
    - Backend (S3 + DynamoDB): ~$0-1 USD/mes
    - VPC y Networking: Gratis
    - EC2 (t4g.medium): ~$30-40 USD/mes (depende de Savings Plans)
@@ -737,7 +637,7 @@ Consulta **[GUIA_CONEXION_REMOTA.md](GUIA_CONEXION_REMOTA.md)** para más detall
    - **Total estimado (con ALB/CloudFront/WAF/ECR)**: ~$83-107 USD/mes
    - **Total estimado (con ALB/CloudFront/WAF/ECR/NAT)**: ~$115-152 USD/mes
 
-7. **Seguridad**: 
+7. **Seguridad**:
    - El bucket S3 tiene acceso público bloqueado y encriptación habilitada
    - Security Groups y NACLs configurados por defecto
    - Network ACL público permite SSH (puerto 22) para acceso al bastion
@@ -774,6 +674,7 @@ Mejoras recomendadas para el futuro:
 - [x] Agregar NAT Gateway para conectividad saliente de la subred privada ✅
 - [x] Crear múltiples subredes privadas por AZ para alta disponibilidad (RDS) ✅
 - [x] Agregar módulo de bases de datos (RDS) con Secrets Manager ✅
+- [x] Migrar Bastion Host a SSM Session Manager ✅
 - [ ] Implementar Auto Scaling Groups
 - [ ] Agregar CloudWatch Alarms y Logs
 - [ ] Configurar certificados ACM para HTTPS en ALB
@@ -806,4 +707,3 @@ El proyecto incluye varios scripts para facilitar el trabajo:
 ---
 
 **Última actualización**: 2025-01-27
-
