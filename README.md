@@ -14,23 +14,24 @@ Infraestructura como código (IaC) para desplegar recursos de red en AWS usando 
 
 ## 📖 Descripción
 
-Este proyecto gestiona la infraestructura completa para la aplicación Scoprions.mx, incluyendo:
+Este proyecto gestiona la infraestructura completa para la aplicación Scorpionpys.mx, incluyendo:
 
 - **VPC** con subredes públicas y privadas (múltiples AZs para ALB)
 - **Internet Gateway** para conectividad pública
 - **Tablas de ruteo** para subredes públicas y privadas
 - **Security Groups y Network ACLs** para seguridad de red
 - **VPC Endpoints** (S3 y DynamoDB) para minimizar tráfico externo
-- **AWS SSM Session Manager** para acceso seguro a instancias privadas (Bastion Host opcional)
+- **AWS SSM Session Manager** para acceso seguro a instancias privadas (sin Bastion Host)
 - **Instancias EC2** con configuración personalizada (volúmenes de 30GB)
 - **Volúmenes EBS** con snapshots automáticos
-- **Key Pairs** para acceso SSH seguro
-- **S3 Bucket** para almacenamiento de la aplicación con lifecycle policies y OAI para CloudFront
-- **ECR (Elastic Container Registry)** para almacenar imágenes Docker con lifecycle policies y escaneo de seguridad
-- **ALB (Application Load Balancer)** con soporte para HTTP/HTTPS condicional
-- **CloudFront** con soporte para orígenes S3 y ALB/EC2, y OAI para acceso seguro a S3
-- **WAF (Web Application Firewall)** asociado a CloudFront para protección contra ataques
+- **S3 Bucket** para almacenamiento de aplicación y artefactos de CI/CD
+- **ECR (Elastic Container Registry)** para almacenar imágenes Docker
+- **ALB (Application Load Balancer)** con soporte HTTP
+- **CloudFront** con dominio personalizado y certificado SSL (ACM)
+- **WAF (Web Application Firewall)** asociado a CloudFront
 - **RDS PostgreSQL** con **Secrets Manager** para gestión segura de credenciales
+- **Route 53** para gestión de DNS
+- **ACM (AWS Certificate Manager)** para certificados SSL/TLS gratuitos
 - **Backend remoto** (S3 + DynamoDB) para gestión segura del estado de Terraform
 
 ## 📁 Estructura del Proyecto
@@ -204,12 +205,13 @@ Una vez que el backend está creado, puedes usar el entorno de producción:
    - Instancia EC2 (t4g.medium) con Amazon Linux 2023 en subnet privada
    - Volumen root EBS (30 GB gp3) y volumen de datos (100 GB gp3) con snapshots automáticos
    - S3 Bucket para almacenamiento de la aplicación con lifecycle policies y OAI para CloudFront
-   - IAM Role y Policy para acceso a S3 desde EC2
+   - IAM Role y Policy para acceso a S3 y Secrets Manager desde EC2
    - ECR Repository para almacenar imágenes Docker con lifecycle policies y escaneo de seguridad
-   - ALB (Application Load Balancer) en subredes públicas (2 AZs) con listeners HTTP/HTTPS condicionales
-   - CloudFront Distribution con soporte para orígenes S3 (con OAI) o ALB/EC2
+   - ALB (Application Load Balancer) en subredes públicas (2 AZs) con listener HTTP
+   - CloudFront Distribution con dominio personalizado (scorpionpys.mx) y certificado SSL
    - WAF (Web Application Firewall) en us-east-1 asociado a CloudFront
-   - Key Pair para acceso SSH (si está configurado)
+   - Route 53 Hosted Zone para gestión de DNS
+   - ACM Certificate para SSL/TLS (us-east-1 para CloudFront)
    - **RDS PostgreSQL** en subredes privadas (Multi-AZ coverage) con credenciales en **Secrets Manager**
 
 5. Verifica los outputs:
@@ -674,28 +676,40 @@ Mejoras recomendadas para el futuro:
 - [x] Crear múltiples subredes privadas por AZ para alta disponibilidad (RDS) ✅
 - [x] Agregar módulo de bases de datos (RDS) con Secrets Manager ✅
 - [x] Migrar Bastion Host a SSM Session Manager ✅
+- [x] Configurar Route 53 para gestión de DNS ✅
+- [x] Configurar dominio personalizado con SSL/TLS (ACM) ✅
 - [ ] Implementar Auto Scaling Groups
 - [ ] Agregar CloudWatch Alarms y Logs
-- [ ] Configurar certificados ACM para HTTPS en ALB
+- [ ] Configurar HTTPS end-to-end (certificado ACM en ALB)
+
+## 🌐 Acceso a la Aplicación
+
+**URL de producción:** <https://scorpionpys.mx>
+
+- **CloudFront:** `https://dhbh04rnde8ns.cloudfront.net`
+- **ALB (directo):** `http://zend-app-prod-mxc1-alb-586007853.mx-central-1.elb.amazonaws.com`
 
 ## 📚 Documentación Adicional
 
-- **[CREAR_KEY_PAIR.md](CREAR_KEY_PAIR.md)**: Guía para crear y configurar Key Pairs SSH
+### Guías de Configuración
+
+- **[GUIA_CONEXION_REMOTA.md](GUIA_CONEXION_REMOTA.md)**: Acceso a EC2 y RDS vía SSM
+- **[GUIA_USO_RDS_DESDE_APP.md](GUIA_USO_RDS_DESDE_APP.md)**: Conectar aplicación a RDS con Secrets Manager
+- **[GUIA_CICD_GITHUB_ACTIONS.md](GUIA_CICD_GITHUB_ACTIONS.md)**: Pipeline de despliegue automatizado
+- **[GUIA_DOMINIO_SSL.md](GUIA_DOMINIO_SSL.md)**: Configuración de dominio personalizado y SSL
+- **[MIGRACION_ROUTE53.md](MIGRACION_ROUTE53.md)**: Migración de DNS a Route 53
+
+### Guías de Troubleshooting
+
 - **[VERIFICACION.md](VERIFICACION.md)**: Guía completa para verificar que todo se creó correctamente
-- **[ACTUALIZACION.md](ACTUALIZACION.md)**: Guía para actualizar recursos de seguridad
 - **[SOLUCION_LOCK.md](SOLUCION_LOCK.md)**: Solución de problemas con State Locks
-- **[USO_BASTION.md](USO_BASTION.md)**: Guía completa para usar el Bastion Host
-- **[TROUBLESHOOTING_SSH.md](TROUBLESHOOTING_SSH.md)**: Solución de problemas de conexión SSH
 - **[USO_ECR.md](USO_ECR.md)**: Guía completa para usar ECR (autenticación, build, push y gestión de imágenes)
 
 ## 🛠️ Scripts Útiles
 
-El proyecto incluye varios scripts para facilitar el trabajo:
+El proyecto incluye scripts para facilitar el trabajo:
 
-- **`actualizar_ssh_config.sh`**: Actualiza automáticamente `~/.ssh/config` con las IPs actuales
-- **`limpiar_ssh_config.sh`**: Limpia y actualiza la configuración SSH eliminando duplicados
-- **`diagnostico_bastion.sh`**: Diagnostica problemas de conexión al bastion
-- **`CONFIG_SSH_CORRECTO.txt`**: Plantilla de configuración SSH correcta
+- **`setup_server.sh`**: Instala Node.js, PM2 y Nginx en la instancia EC2
 
 ## 📚 Recursos
 
