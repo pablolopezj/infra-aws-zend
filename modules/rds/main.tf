@@ -64,6 +64,12 @@ resource "aws_db_parameter_group" "this" {
   family = var.parameter_group_family
   name   = "${var.name_prefix}-db-params"
 
+  # Configurar zona horaria (Ciudad de México)
+  parameter {
+    name  = "timezone"
+    value = var.timezone
+  }
+
   tags = merge(
     var.tags,
     {

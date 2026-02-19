@@ -302,6 +302,7 @@ module "rds" {
 
   engine_version         = var.rds_engine_version
   parameter_group_family = var.rds_parameter_group_family
+  timezone              = var.rds_timezone
 
   # Permitir acceso desde la instancia EC2 privada
   # Permitir acceso desde la instancia EC2 privada y desde el Bastion (para túneles)

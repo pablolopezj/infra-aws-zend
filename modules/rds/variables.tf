@@ -174,6 +174,12 @@ variable "parameter_group_family" {
   default     = "postgres16"
 }
 
+variable "timezone" {
+  type        = string
+  description = "PostgreSQL timezone (e.g., 'America/Mexico_City', 'UTC'). See https://www.postgresql.org/docs/current/datatype-datetime.html#DATATYPE-TIMEZONES"
+  default     = "America/Mexico_City"
+}
+
 variable "tags" {
   type        = map(string)
   description = "Common tags to apply to all resources"

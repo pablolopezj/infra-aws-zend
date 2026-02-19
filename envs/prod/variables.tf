@@ -360,6 +360,12 @@ variable "rds_parameter_group_family" {
   default     = "postgres16"
 }
 
+variable "rds_timezone" {
+  type        = string
+  description = "PostgreSQL timezone (e.g., 'America/Mexico_City', 'UTC'). Default: Ciudad de México"
+  default     = "America/Mexico_City"
+}
+
 # ============================================================================
 # Variables para S3
 # ============================================================================
